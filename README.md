@@ -74,3 +74,46 @@ This study advances software engineering and management research by demonstratin
 | **UN Organizations & DILG** | Obtains reliable data logging supporting SDG 11 urban risk reduction frameworks. |
 | **PWD Personnel** | Interacts with an inclusive, accessible system interface designed for diverse operational roles. |
 | **Future Researchers** | Serves as a baseline study for combining traditional software architectures with AI-driven logistics. |
+
+
+
+
+Project Phases:
+
+### Phase 1: Requirement Analysis and Architecture Planning
+
+| Task Description | Status |
+| :--- | :--- |
+| Establish the operational foundation for the Disaster Relief Goods Inventory and Distribution Management System. | |
+| Finalize technical requirements, roles, and operational workflows. | |
+| Structure the project to specifically solve critical LGU/DILG bottlenecks (e.g., manual inventory counting, paper log errors, and dispatch delays). | |
+| Align the technical architecture with UN SDG 11 objectives to shift toward urgency-based community relief tracking. | |
+
+### Phase 2: UI/UX Prototyping and Access Control
+
+| Task Description | Status |
+| :--- | :--- |
+| Transition the 28 planned design screens into the interactive web application interface for BarangayCare. | |
+| Construct the system around 10 major pages, establishing a central Dashboard branching out to Inventory, Disasters, Beneficiaries, Donations, Distribution, Reports, Audit Logs, and User Administration. | |
+| Implement strict, hierarchical role permissions across the application. | |
+| Grant Admin accounts comprehensive control over the workspace and user roles. | |
+| Grant Barangay Officials the authority to manage records, confirm relief releases, and export data reports. | |
+| Restrict Encoders strictly to data entry and drafting preparation. | |
+
+### Phase 3: Core Application and Database Development
+
+| Task Description | Status |
+| :--- | :--- |
+| Build the functional backend and interactive frontend relying on traditional Object-Oriented Programming (OOP) concepts. | |
+| Design the relational database architecture in MySQL to link disaster events, household records, and donor transactions, ensuring distributed quantities automatically deduct from available inventory. | |
+| Develop a responsive React web application frontend utilizing persistent state management and real-time search filtering. | |
+| Write the backend logic in Java using structured generic data models to handle incoming relief computations and track multi-variable metrics (e.g., senior citizens, infants, PWDs). | |
+
+### Phase 4: AI Integration, Auditing, and Final Testing
+
+| Task Description | Status |
+| :--- | :--- |
+| Integrate an AI model to evaluate real-time data and dynamically route goods based on urgency. | |
+| Finalize the Audit Logs module to generate a read-only transaction history of all system activities and stock movements for strict accountability. | |
+| Conduct comprehensive usability testing to guarantee platform reliability, efficiency, and full accessibility for PWD personnel. | |
+| Prepare the completed system for final evaluation and noting by the faculty in-charge. | |
