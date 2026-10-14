@@ -7,7 +7,7 @@ public class Inventory {
     public Inventory(String itemId, String itemName, int quantity, String unit) {
         this.itemId = itemId;
         this.itemName = itemName;
-        this.quantity = quantity;
+        setQuantity(quantity);
         this.unit = unit;
     }
 
@@ -32,7 +32,27 @@ public class Inventory {
     }
 
     public void setQuantity(int quantity) {
+        if (quantity < 0) {
+            throw new IllegalArgumentException("Inventory quantity cannot be negative.");
+        }
         this.quantity = quantity;
+    }
+
+    public void addStock(int amount) {
+        if (amount <= 0) {
+            throw new IllegalArgumentException("Stock addition must be positive.");
+        }
+        quantity = Math.addExact(quantity, amount);
+    }
+
+    public void removeStock(int amount) {
+        if (amount <= 0) {
+            throw new IllegalArgumentException("Stock removal must be positive.");
+        }
+        if (amount > quantity) {
+            throw new IllegalArgumentException("Cannot remove more stock than is available.");
+        }
+        quantity -= amount;
     }
 
     public String getUnit() {

@@ -49,6 +49,12 @@ The disaster relief pipeline requires an automated, modern system to replace pap
 
 ---
 
+## MVC Backend
+
+The Java domain classes are the **Model** layer and own business rules such as transaction approval, role permission checks, and stock changes. `UserAccount` is an abstract base class; `AdminAccount`, `BarangayOfficialAccount`, and `EncoderAccount` inherit from it and override permission methods. This demonstrates abstraction, inheritance, and polymorphism. Feature controllers coordinate calls to the models, while the GUI/View can call the controller methods when it is added. The controllers currently work with in-memory objects; database persistence and login authentication are not implemented yet.
+
+---
+
 ## 📦 Expected Output
 
 The primary output is a web-based **Disaster Relief Goods Management System** featuring:
