@@ -51,7 +51,11 @@ The disaster relief pipeline requires an automated, modern system to replace pap
 
 ## MVC Backend
 
-The Java domain classes are the **Model** layer and own business rules such as transaction approval, role permission checks, and stock changes. `UserAccount` is an abstract base class; `AdminAccount`, `BarangayOfficialAccount`, and `EncoderAccount` inherit from it and override permission methods. This demonstrates abstraction, inheritance, and polymorphism. Feature controllers coordinate calls to the models, while the GUI/View can call the controller methods when it is added. The controllers currently work with in-memory objects; database persistence and login authentication are not implemented yet.
+All Java source files are in the `LIB` package and the matching `LIB` folder. Classes outside that package, such as a future GUI, should import the classes they use (for example, `import LIB.Inventory;`) or use `import LIB.*;`.
+
+The Java domain classes are the **Model** layer and own business rules such as transaction approval, role permission checks, and stock changes. `UserAccount` is an abstract base class; `AdminAccount`, `BarangayOfficialAccount`, and `EncoderAccount` inherit from it and override permission methods, demonstrating abstraction, inheritance, and runtime polymorphism. `BarangayScoped` is an interface implemented by accounts, inventory, disasters, evacuation centers, donations, and distributions so workspace membership can be checked consistently. The models also demonstrate encapsulation through private state and controlled methods, and composition through transactions containing item lines that reference inventory and batches. Accounts hold a barangay workspace where applicable, an email, active/inactive status, and a salted PBKDF2 password hash. `LoginController` can authenticate against an in-memory account list; SQL-backed account lookup and persistence are still pending.
+
+Feature controllers coordinate calls to the models, while the GUI/View can call the controller methods when it is added. Each `Barangay` is a workspace for its inventory, disasters, evacuation centers, households, and staff. Active accounts of any role can modify disasters in workspaces they can access. `Beneficiaries` represents a household with at least one confirmed `FamilyMember` at registration; household size and vulnerability counts derive from that roster, and a designated member represents the household head when aid is received. A homeless household uses the barangay name as its address. Each member's age and senior/infant/PWD classifications are stored independently and entered based on human verification; the system does not infer classifications from age. Donations and distributions move through `DRAFT`, `PENDING`, and then `APPROVED` or `REJECTED`; only approval changes stock. Donation lines create distinct `InventoryBatch` records with received and optional expiry dates. Opening inventory is represented as an opening batch. Distribution lines can specify the batch to release; if only one batch has stock, it can be inferred, but the model requires an explicit batch when several are available rather than assuming an expiry/FIFO policy. Transaction and account data remain in memory until database persistence is added.
 
 ---
 
@@ -84,42 +88,33 @@ This study advances software engineering and management research by demonstratin
 
 
 
-Project Phases:
+## Project Phases
 
-### Phase 1: Requirement Analysis and Architecture Planning
+### Phase 1: Structure — Core Backend Structure Done
 
-| Task Description | Status |
-| :--- | :--- |
-| Establish the operational foundation for the Disaster Relief Goods Inventory and Distribution Management System. | |
-| Finalize technical requirements, roles, and operational workflows. | |
-| Structure the project to specifically solve critical LGU/DILG bottlenecks (e.g., manual inventory counting, paper log errors, and dispatch delays). | |
-| Align the technical architecture with UN SDG 11 objectives to shift toward urgency-based community relief tracking. | |
+- Java models and controllers organized in the `LIB` package.
+- Core barangay, account, household, disaster, inventory, donation, and distribution relationships established.
+- Household roster, stock-batch, and transaction approval rules represented in the models.
+- Compiles successfully; database persistence and full workflow integration remain for later phases.
 
-### Phase 2: UI/UX Prototyping and Access Control
+### Phase 2: SQL — Not Started
 
-| Task Description | Status |
-| :--- | :--- |
-| Transition the 28 planned design screens into the interactive web application interface for BarangayCare. | |
-| Construct the system around 10 major pages, establishing a central Dashboard branching out to Inventory, Disasters, Beneficiaries, Donations, Distribution, Reports, Audit Logs, and User Administration. | |
-| Implement strict, hierarchical role permissions across the application. | |
-| Grant Admin accounts comprehensive control over the workspace and user roles. | |
-| Grant Barangay Officials the authority to manage records, confirm relief releases, and export data reports. | |
-| Restrict Encoders strictly to data entry and drafting preparation. | |
+- Design the relational schema for barangays, users, households and members, disasters, inventory batches, donations, and distributions.
+- Add database connection and persistence.
+- Keep transaction status, stock totals, and batch quantities consistent with atomic database updates.
+- Persist password hashes and salts securely; do not store plaintext passwords.
+- Implement report generation and automatic audit recording after database integration.
 
-### Phase 3: Core Application and Database Development
+### Phase 3: GUI — Not Started
 
-| Task Description | Status |
-| :--- | :--- |
-| Build the functional backend and interactive frontend relying on traditional Object-Oriented Programming (OOP) concepts. | |
-| Design the relational database architecture in MySQL to link disaster events, household records, and donor transactions, ensuring distributed quantities automatically deduct from available inventory. | |
-| Develop a responsive React web application frontend utilizing persistent state management and real-time search filtering. | |
-| Write the backend logic in Java using structured generic data models to handle incoming relief computations and track multi-variable metrics (e.g., senior citizens, infants, PWDs). | |
+- Build the user interface from the planned screens.
+- Connect the GUI to the backend controllers.
+- Reflect role permissions and barangay workspaces in the available screens and actions.
+- Support household registration, member verification, and explicit stock-batch selection when needed.
 
-### Phase 4: AI Integration, Auditing, and Final Testing
+### Phase 4: Final Testing and Debugging — Not Started
 
-| Task Description | Status |
-| :--- | :--- |
-| Integrate an AI model to evaluate real-time data and dynamically route goods based on urgency. | |
-| Finalize the Audit Logs module to generate a read-only transaction history of all system activities and stock movements for strict accountability. | |
-| Conduct comprehensive usability testing to guarantee platform reliability, efficiency, and full accessibility for PWD personnel. | |
-| Prepare the completed system for final evaluation and noting by the faculty in-charge. | |
+- Test the complete GUI-to-database workflows.
+- Verify role permissions, barangay access, household records, approvals, and batch-level stock changes.
+- Test error handling, audit history, reports, and accessibility.
+- Fix remaining issues and prepare the system for final evaluation.

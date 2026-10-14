@@ -1,4 +1,7 @@
+package LIB;
+
 public class Reports {
+    //Methods and Behaviors to be added later after SQL.
     private String reportId;
     private String reportName;
     private String generatedDate;

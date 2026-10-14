@@ -1,3 +1,5 @@
+package LIB;
+
 public class Dashboard {
     private Reports reports;
 

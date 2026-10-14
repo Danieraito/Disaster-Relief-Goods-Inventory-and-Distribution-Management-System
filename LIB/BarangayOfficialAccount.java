@@ -1,6 +1,9 @@
+package LIB;
+
 public class BarangayOfficialAccount extends UserAccount {
-    public BarangayOfficialAccount(String accountId, String name, String username) {
-        super(accountId, name, username, Role.BARANGAY_OFFICIAL);
+    public BarangayOfficialAccount(String accountId, String name, String username, String email,
+            String password, Barangay barangay) {
+        super(accountId, name, username, email, password, Role.BARANGAY_OFFICIAL, barangay);
     }
 
     @Override

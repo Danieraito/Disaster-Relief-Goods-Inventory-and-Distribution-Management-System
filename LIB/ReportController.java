@@ -1,3 +1,5 @@
+package LIB;
+
 public class ReportController {
     public Reports createReportRecord(String reportId, String reportName, String generatedDate,
             Inventory inventory, Disaster disaster, Distribution distribution) {

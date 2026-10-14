@@ -1,22 +1,53 @@
-public class Disaster {
+package LIB;
+
+public class Disaster implements BarangayScoped {
     private String disasterId;
     private String name;
     private String type;
     private String location;
     private String date;
     private String status;
+    private String severity;
+    private String affectedAreas;
+    private final Barangay barangay;
 
     public Disaster(String disasterId, String name, String type, String location, String date, String status) {
+        this(disasterId, name, type, location, date, status, null);
+    }
+
+    public Disaster(String disasterId, String name, String type, String location, String date,
+            String status, Barangay barangay) {
         this.disasterId = disasterId;
         this.name = name;
         this.type = type;
         this.location = location;
         this.date = date;
         this.status = status;
+        this.barangay = barangay;
+    }
+
+    public String getSeverity() {
+        return severity;
+    }
+
+    public void setSeverity(String severity) {
+        this.severity = severity;
+    }
+
+    public String getAffectedAreas() {
+        return affectedAreas;
+    }
+
+    public void setAffectedAreas(String affectedAreas) {
+        this.affectedAreas = affectedAreas;
     }
 
     public String getDisasterId() {
         return disasterId;
+    }
+
+    public Barangay getBarangay() {
+        return barangay;
     }
 
     public void setDisasterId(String disasterId) {

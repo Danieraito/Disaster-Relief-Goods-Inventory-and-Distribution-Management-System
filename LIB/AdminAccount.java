@@ -1,6 +1,8 @@
-public class EncoderAccount extends UserAccount {
-    public EncoderAccount(String accountId, String name, String username) {
-        super(accountId, name, username, Role.ENCODER);
+package LIB;
+
+public class AdminAccount extends UserAccount {
+    public AdminAccount(String accountId, String name, String username, String email, String password) {
+        super(accountId, name, username, email, password, Role.ADMIN, null);
     }
 
     @Override
@@ -10,21 +12,21 @@ public class EncoderAccount extends UserAccount {
 
     @Override
     public boolean canManageRecords() {
-        return false;
+        return true;
     }
 
     @Override
     public boolean canApproveDistributions() {
-        return false;
+        return true;
     }
 
     @Override
     public boolean canManageUsers() {
-        return false;
+        return true;
     }
 
     @Override
     public boolean canExportReports() {
-        return false;
+        return true;
     }
 }

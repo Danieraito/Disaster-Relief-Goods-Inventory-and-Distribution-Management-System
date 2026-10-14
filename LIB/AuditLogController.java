@@ -1,3 +1,5 @@
+package LIB;
+
 public class AuditLogController {
     public Audits createAuditRecord(String auditId, String action, String dateTime, UserAccount user,
             Donations donation, Distribution distribution) {
