@@ -101,6 +101,7 @@ This study advances software engineering and management research by demonstratin
 
 - Maven configuration includes MySQL Connector/J; no database server is required to compile the models.
 - `LIB.DatabaseConnection` reads `DB_URL` (optional; defaults to the local `disaster_relief_inventory` database), `DB_USER`, and `DB_PASSWORD` from environment variables.
+- To run the JDBC smoke test from the repository root after starting MySQL and setting those variables, use `mvn exec:java`. It runs `LIB.DatabaseConnectionCheck`, which tests the connection with `SELECT 1`.
 - The initial MySQL schema is in `database/schema.sql`; review it against the final screen fields before applying it to a server.
 - Add and verify a database server, then test the JDBC connection and implement persistence.
 - Keep transaction status, stock totals, and batch quantities consistent with atomic database updates.
