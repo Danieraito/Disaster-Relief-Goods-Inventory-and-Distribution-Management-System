@@ -97,10 +97,12 @@ This study advances software engineering and management research by demonstratin
 - Household roster, stock-batch, and transaction approval rules represented in the models.
 - Compiles successfully; database persistence and full workflow integration remain for later phases.
 
-### Phase 2: SQL — Not Started
+### Phase 2: SQL — Schema Drafted; Persistence Not Started
 
-- Design the relational schema for barangays, users, households and members, disasters, inventory batches, donations, and distributions.
-- Add database connection and persistence.
+- Maven configuration includes MySQL Connector/J; no database server is required to compile the models.
+- `LIB.DatabaseConnection` reads `DB_URL` (optional; defaults to the local `disaster_relief_inventory` database), `DB_USER`, and `DB_PASSWORD` from environment variables.
+- The initial MySQL schema is in `database/schema.sql`; review it against the final screen fields before applying it to a server.
+- Add and verify a database server, then test the JDBC connection and implement persistence.
 - Keep transaction status, stock totals, and batch quantities consistent with atomic database updates.
 - Persist password hashes and salts securely; do not store plaintext passwords.
 - Implement report generation and automatic audit recording after database integration.
