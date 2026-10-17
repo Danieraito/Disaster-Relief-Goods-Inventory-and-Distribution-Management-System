@@ -97,21 +97,22 @@ This study advances software engineering and management research by demonstratin
 - Household roster, stock-batch, and transaction approval rules represented in the models.
 - Compiles successfully; database persistence and full workflow integration remain for later phases.
 
-### Phase 2: SQL — Schema Drafted; Persistence Not Started
+### Phase 2: SQL — Schema Drafted; Core Reads and Inventory Persistence Started
 
 - Maven configuration includes MySQL Connector/J; no database server is required to compile the models.
 - `LIB.DatabaseConnection` reads `DB_URL` (optional; defaults to the local `disaster_relief_inventory` database), `DB_USER`, and `DB_PASSWORD` from environment variables.
 - To run the JDBC smoke test from the repository root after starting MySQL and setting those variables, use `mvn exec:java`. It runs `LIB.DatabaseConnectionCheck`, which tests the connection with `SELECT 1`.
-- The initial MySQL schema is in `database/schema.sql`; review it against the final screen fields before applying it to a server.
-- Add and verify a database server, then test the JDBC connection and implement persistence.
+- The MySQL schema is in `database/schema.sql`; select the target database in the JDBC URL before applying it. The script does not create or switch databases.
+- MySQL triggers require an import tool that understands `DELIMITER`.
+- Barangay/inventory reads, opening-stock persistence, and database-backed login are implemented. Donation/distribution persistence is still pending.
 - Keep transaction status, stock totals, and batch quantities consistent with atomic database updates.
 - Persist password hashes and salts securely; do not store plaintext passwords.
 - Implement report generation and automatic audit recording after database integration.
 
-### Phase 3: GUI — Not Started
+### Phase 3: GUI — Initial Swing Screens Added
 
-- Build the user interface from the planned screens.
-- Connect the GUI to the backend controllers.
+- `GUI.App` starts the Swing app; `mvn exec:java` runs it after database credentials and schema are configured.
+- Login, dashboard, and inventory screens are connected to MySQL-backed reads; other navigation pages are placeholders.
 - Reflect role permissions and barangay workspaces in the available screens and actions.
 - Support household registration, member verification, and explicit stock-batch selection when needed.
 

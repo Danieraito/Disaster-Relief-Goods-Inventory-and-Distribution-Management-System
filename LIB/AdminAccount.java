@@ -5,6 +5,11 @@ public class AdminAccount extends UserAccount {
         super(accountId, name, username, email, password, Role.ADMIN, null);
     }
 
+    AdminAccount(String accountId, String name, String username, String email,
+            byte[] passwordSalt, byte[] passwordHash, UserAccount.Status status) {
+        super(accountId, name, username, email, Role.ADMIN, null, passwordSalt, passwordHash, status);
+    }
+
     @Override
     public boolean canEnterRecords() {
         return true;

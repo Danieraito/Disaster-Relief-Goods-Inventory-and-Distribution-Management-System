@@ -1,8 +1,5 @@
-CREATE DATABASE IF NOT EXISTS disaster_relief_inventory
-    CHARACTER SET utf8mb4
-    COLLATE utf8mb4_unicode_ci;
-
-USE disaster_relief_inventory;
+-- Select the target database before running this script. For a hosted service,
+-- this should be the database name in DB_URL (for example, defaultdb on Aiven).
 
 CREATE TABLE barangays (
     barangay_id VARCHAR(36) PRIMARY KEY,
@@ -260,6 +257,279 @@ CREATE TABLE audit_logs (
         REFERENCES distributions (distribution_id)
         ON UPDATE CASCADE ON DELETE RESTRICT
 );
+
+-- Database-side workflow guards and read-only summaries carried over from the
+-- SQLite design. Run this script with a MySQL client that supports DELIMITER.
+DELIMITER //
+
+CREATE TRIGGER donations_start_as_draft
+BEFORE INSERT ON donations
+FOR EACH ROW
+BEGIN
+    IF NEW.status <> 'DRAFT' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'New donations must start as DRAFT.';
+    END IF;
+END//
+
+CREATE TRIGGER donations_status_flow
+BEFORE UPDATE ON donations
+FOR EACH ROW
+BEGIN
+    DECLARE line_count INT DEFAULT 0;
+    DECLARE approver_count INT DEFAULT 0;
+
+    IF NOT (
+        OLD.status = NEW.status
+        OR (OLD.status = 'DRAFT' AND NEW.status = 'PENDING')
+        OR (OLD.status = 'PENDING' AND NEW.status IN ('APPROVED', 'REJECTED'))
+    ) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Invalid donation status transition.';
+    END IF;
+
+    IF OLD.status = 'DRAFT' AND NEW.status = 'PENDING' THEN
+        SELECT COUNT(*) INTO line_count
+        FROM donation_items WHERE donation_id = OLD.donation_id;
+        IF line_count = 0 OR NEW.received_by_account_id IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'A pending donation needs item lines and no approver yet.';
+        END IF;
+    END IF;
+
+    IF OLD.status = 'PENDING' AND NEW.status = 'APPROVED' THEN
+        SELECT COUNT(*) INTO line_count
+        FROM donation_items WHERE donation_id = OLD.donation_id;
+        SELECT COUNT(*) INTO approver_count
+        FROM user_accounts
+        WHERE account_id = NEW.received_by_account_id
+          AND status = 'ACTIVE'
+          AND (role = 'ADMIN' OR (role = 'BARANGAY_OFFICIAL' AND barangay_id = NEW.barangay_id));
+        IF line_count = 0 OR approver_count = 0 THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Donation approval requires an active authorized approver and item lines.';
+        END IF;
+    END IF;
+END//
+
+CREATE TRIGGER distributions_start_as_draft
+BEFORE INSERT ON distributions
+FOR EACH ROW
+BEGIN
+    IF NEW.status <> 'DRAFT' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'New distributions must start as DRAFT.';
+    END IF;
+END//
+
+CREATE TRIGGER distributions_status_flow
+BEFORE UPDATE ON distributions
+FOR EACH ROW
+BEGIN
+    DECLARE line_count INT DEFAULT 0;
+    DECLARE missing_batch_count INT DEFAULT 0;
+    DECLARE approver_count INT DEFAULT 0;
+    DECLARE household_head_count INT DEFAULT 0;
+
+    IF NOT (
+        OLD.status = NEW.status
+        OR (OLD.status = 'DRAFT' AND NEW.status = 'PENDING')
+        OR (OLD.status = 'PENDING' AND NEW.status IN ('APPROVED', 'REJECTED'))
+    ) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Invalid distribution status transition.';
+    END IF;
+
+    IF NEW.status = 'PENDING' AND OLD.status = 'DRAFT' THEN
+        SELECT COUNT(*) INTO line_count
+        FROM distribution_items WHERE distribution_id = OLD.distribution_id;
+        IF line_count = 0 OR NEW.released_by_account_id IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'A pending distribution needs item lines and no approver yet.';
+        END IF;
+        IF NEW.beneficiary_id IS NOT NULL THEN
+            SELECT COUNT(*) INTO household_head_count
+            FROM households
+            WHERE household_id = NEW.beneficiary_id
+              AND household_head_member_id IS NOT NULL;
+            IF household_head_count = 0 THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'A household must have a designated head before aid is issued.';
+            END IF;
+        END IF;
+    END IF;
+
+    IF OLD.status = 'PENDING' AND NEW.status = 'APPROVED' THEN
+        SELECT COUNT(*) INTO line_count
+        FROM distribution_items WHERE distribution_id = OLD.distribution_id;
+        SELECT COUNT(*) INTO missing_batch_count
+        FROM distribution_items
+        WHERE distribution_id = OLD.distribution_id AND batch_id IS NULL;
+        SELECT COUNT(*) INTO approver_count
+        FROM user_accounts
+        WHERE account_id = NEW.released_by_account_id
+          AND status = 'ACTIVE'
+          AND (role = 'ADMIN' OR (role = 'BARANGAY_OFFICIAL' AND barangay_id = NEW.barangay_id));
+        IF line_count = 0 OR missing_batch_count > 0 OR approver_count = 0 THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Distribution approval requires item lines, selected batches, and an active authorized approver.';
+        END IF;
+        IF NEW.beneficiary_id IS NOT NULL THEN
+            SELECT COUNT(*) INTO household_head_count
+            FROM households
+            WHERE household_id = NEW.beneficiary_id
+              AND household_head_member_id IS NOT NULL;
+            IF household_head_count = 0 THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'A household must have a designated head before aid is issued.';
+            END IF;
+        END IF;
+    END IF;
+END//
+
+CREATE TRIGGER donation_items_insert_draft_only
+BEFORE INSERT ON donation_items
+FOR EACH ROW
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM donations WHERE donation_id = NEW.donation_id AND status = 'DRAFT') THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Donation lines can only be added to draft donations.';
+    END IF;
+END//
+
+CREATE TRIGGER donation_items_update_draft_only
+BEFORE UPDATE ON donation_items
+FOR EACH ROW
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM donations WHERE donation_id = OLD.donation_id AND status = 'DRAFT')
+       OR NOT EXISTS (SELECT 1 FROM donations WHERE donation_id = NEW.donation_id AND status = 'DRAFT') THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Donation lines can only be changed on draft donations.';
+    END IF;
+END//
+
+CREATE TRIGGER donation_items_delete_draft_only
+BEFORE DELETE ON donation_items
+FOR EACH ROW
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM donations WHERE donation_id = OLD.donation_id AND status = 'DRAFT') THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Donation lines can only be deleted from draft donations.';
+    END IF;
+END//
+
+CREATE TRIGGER distribution_items_insert_draft_only
+BEFORE INSERT ON distribution_items
+FOR EACH ROW
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM distributions WHERE distribution_id = NEW.distribution_id AND status = 'DRAFT') THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Distribution lines can only be added to draft distributions.';
+    END IF;
+END//
+
+CREATE TRIGGER distribution_items_update_draft_only
+BEFORE UPDATE ON distribution_items
+FOR EACH ROW
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM distributions WHERE distribution_id = OLD.distribution_id AND status = 'DRAFT')
+       OR NOT EXISTS (SELECT 1 FROM distributions WHERE distribution_id = NEW.distribution_id AND status = 'DRAFT') THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Distribution lines can only be changed on draft distributions.';
+    END IF;
+END//
+
+CREATE TRIGGER distribution_items_delete_draft_only
+BEFORE DELETE ON distribution_items
+FOR EACH ROW
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM distributions WHERE distribution_id = OLD.distribution_id AND status = 'DRAFT') THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Distribution lines can only be deleted from draft distributions.';
+    END IF;
+END//
+
+CREATE TRIGGER donation_batches_require_approval
+BEFORE INSERT ON inventory_batches
+FOR EACH ROW
+BEGIN
+    IF NEW.batch_type = 'DONATION'
+       AND NOT EXISTS (SELECT 1 FROM donations WHERE donation_id = NEW.donation_id AND status = 'APPROVED') THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Donation batches can only be created for approved donations.';
+    END IF;
+END//
+
+CREATE TRIGGER audit_logs_no_update
+BEFORE UPDATE ON audit_logs
+FOR EACH ROW
+BEGIN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Audit logs cannot be modified.';
+END//
+
+CREATE TRIGGER audit_logs_no_delete
+BEFORE DELETE ON audit_logs
+FOR EACH ROW
+BEGIN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Audit logs cannot be deleted.';
+END//
+
+DELIMITER ;
+
+CREATE OR REPLACE VIEW v_inventory_stock AS
+SELECT item.inventory_item_id,
+       item.barangay_id,
+       item.item_name,
+       item.category,
+       item.unit,
+       COALESCE(stock.quantity, 0) AS quantity,
+       item.low_stock_threshold,
+       CASE WHEN COALESCE(stock.quantity, 0) <= item.low_stock_threshold THEN TRUE ELSE FALSE END AS is_low_stock,
+       stock.earliest_expiry
+FROM inventory_items AS item
+LEFT JOIN (
+    SELECT inventory_item_id,
+           SUM(remaining_quantity) AS quantity,
+           MIN(CASE WHEN remaining_quantity > 0 THEN expiry_date END) AS earliest_expiry
+    FROM inventory_batches
+    GROUP BY inventory_item_id
+) AS stock ON stock.inventory_item_id = item.inventory_item_id;
+
+CREATE OR REPLACE VIEW v_household_summary AS
+SELECT household.household_id,
+       household.household_name,
+       household.address,
+       household.disaster_id,
+       disaster.barangay_id,
+       COALESCE(member_counts.household_size, 0) AS household_size,
+       COALESCE(member_counts.senior_count, 0) AS senior_count,
+       COALESCE(member_counts.infant_count, 0) AS infant_count,
+       COALESCE(member_counts.pwd_count, 0) AS pwd_count
+FROM households AS household
+JOIN disasters AS disaster ON disaster.disaster_id = household.disaster_id
+LEFT JOIN (
+    SELECT household_id,
+           COUNT(*) AS household_size,
+           SUM(is_senior_citizen) AS senior_count,
+           SUM(is_infant) AS infant_count,
+           SUM(is_pwd) AS pwd_count
+    FROM family_members
+    GROUP BY household_id
+) AS member_counts ON member_counts.household_id = household.household_id;
+
+CREATE OR REPLACE VIEW v_donation_summary AS
+SELECT donation.donation_id,
+       donation.barangay_id,
+       donation.donation_date,
+       donation.status,
+       donor.name AS donor,
+       COALESCE(item_totals.total_quantity, 0) AS total_quantity
+FROM donations AS donation
+JOIN donors AS donor ON donor.donor_id = donation.donor_id
+LEFT JOIN (
+    SELECT donation_id, SUM(quantity) AS total_quantity
+    FROM donation_items
+    GROUP BY donation_id
+) AS item_totals ON item_totals.donation_id = donation.donation_id;
+
+CREATE OR REPLACE VIEW v_distribution_summary AS
+SELECT distribution.distribution_id,
+       distribution.barangay_id,
+       distribution.distribution_date,
+       distribution.status,
+       household.household_name AS household,
+       distribution.disaster_id,
+       COALESCE(item_totals.total_quantity, 0) AS total_quantity
+FROM distributions AS distribution
+LEFT JOIN households AS household ON household.household_id = distribution.beneficiary_id
+LEFT JOIN (
+    SELECT distribution_id, SUM(quantity) AS total_quantity
+    FROM distribution_items
+    GROUP BY distribution_id
+) AS item_totals ON item_totals.distribution_id = distribution.distribution_id;
 
 -- Insert a household, at least one family member, and its household-head reference
 -- in one JDBC transaction; set the head and commit only after the confirmed roster is complete.

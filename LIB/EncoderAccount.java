@@ -6,6 +6,12 @@ public class EncoderAccount extends UserAccount {
         super(accountId, name, username, email, password, Role.ENCODER, barangay);
     }
 
+    EncoderAccount(String accountId, String name, String username, String email,
+            Barangay barangay, byte[] passwordSalt, byte[] passwordHash, UserAccount.Status status) {
+        super(accountId, name, username, email, Role.ENCODER, barangay,
+                passwordSalt, passwordHash, status);
+    }
+
     @Override
     public boolean canEnterRecords() {
         return true;

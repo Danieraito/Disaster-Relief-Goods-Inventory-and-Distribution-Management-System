@@ -54,6 +54,50 @@ public abstract class UserAccount implements BarangayScoped {
         this.passwordHash = hashPassword(requirePassword(password), salt);
     }
 
+    protected UserAccount(String accountId, String name, String username, String email,
+            Role role, Barangay barangay, byte[] passwordSalt, byte[] passwordHash, Status status) {
+        this.accountId = requireText(accountId, "accountId");
+        this.name = requireText(name, "name");
+        this.username = requireText(username, "username");
+        this.email = requireText(email, "email");
+        if (!this.email.contains("@")) {
+            throw new IllegalArgumentException("Email address must contain @.");
+        }
+        this.role = Objects.requireNonNull(role, "role");
+        if (role != Role.ADMIN && barangay == null) {
+            throw new IllegalArgumentException("Non-admin accounts must belong to a barangay.");
+        }
+        this.barangay = barangay;
+        this.passwordSalt = Objects.requireNonNull(passwordSalt, "passwordSalt").clone();
+        this.passwordHash = Objects.requireNonNull(passwordHash, "passwordHash").clone();
+        this.status = Objects.requireNonNull(status, "status");
+    }
+
+    static UserAccount restore(String accountId, String name, String username, String email,
+            Role role, Barangay barangay, byte[] passwordSalt, byte[] passwordHash, Status status) {
+        Objects.requireNonNull(role, "role");
+        switch (role) {
+            case ADMIN:
+                return new AdminAccount(accountId, name, username, email, passwordSalt, passwordHash, status);
+            case BARANGAY_OFFICIAL:
+                return new BarangayOfficialAccount(accountId, name, username, email, barangay,
+                        passwordSalt, passwordHash, status);
+            case ENCODER:
+                return new EncoderAccount(accountId, name, username, email, barangay,
+                        passwordSalt, passwordHash, status);
+            default:
+                throw new IllegalArgumentException("Unsupported account role: " + role);
+        }
+    }
+
+    byte[] getPasswordSaltCopy() {
+        return passwordSalt.clone();
+    }
+
+    byte[] getPasswordHashCopy() {
+        return passwordHash.clone();
+    }
+
     public String getAccountId() {
         return accountId;
     }
