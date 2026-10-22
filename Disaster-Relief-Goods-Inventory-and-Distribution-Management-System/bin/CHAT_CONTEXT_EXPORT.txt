@@ -1,0 +1,81 @@
+PROJECT HANDOFF / CHAT CONTEXT
+Date: 2026-10-15
+
+PROJECT
+Disaster Relief Goods Inventory and Distribution Management System
+Repository: Danieraito/Disaster-Relief-Goods-Inventory-and-Distribution-Management-System
+Language: Java
+
+HOW TO CONTINUE
+Open this repository in VS Code and read this file plus README.md before making changes.
+The Java source files are in the LIB folder and declare package LIB.
+Preserve existing worktree changes; do not discard or overwrite them.
+The current project phase is Phase 1 (Structure). The next planned phase is Phase 2 (SQL).
+
+USER'S PROJECT DIRECTION
+- Focus on backend models and business logic before GUI.
+- Follow MVC: Models contain data and business logic; Views present data; Controllers handle interaction.
+- Keep the code straightforward and understandable; avoid unnecessary complex data structures and abstractions.
+- Quantities are integers.
+- Java classes are in package LIB. README.md and project notes stay outside that package.
+- The planned GUI is a separate View and has not been implemented.
+- The database is not connected yet.
+
+IMPORTANT DOMAIN DECISIONS
+1. Barangay workspaces:
+   - Each barangay has its own workspace.
+   - Barangay officials and encoders are assigned to a barangay.
+   - Active users can access their assigned barangay; admins can access all.
+   - Active users of any role may create/update disaster records in workspaces they can access.
+2. Inventory batches:
+   - Each logged incoming receipt is a separate batch.
+   - Batch quantity and optional expiry date belong to that batch.
+   - Existing opening stock is represented by an opening batch.
+   - If several batches have stock, a distribution must explicitly select a batch.
+   - Do not silently assume FIFO or expiry-first selection.
+3. Households and members:
+   - Beneficiary records represent households.
+   - A household requires at least one confirmed family member at registration.
+   - Individual members can be recorded, with one designated household head representing the household for aid.
+   - For a homeless household, the barangay name is recorded as the address.
+   - Age and senior/infant/PWD categories are separate values, entered according to human verification. Do not infer category from age.
+4. Donation and distribution workflow:
+   - Status transitions: DRAFT -> PENDING -> APPROVED or REJECTED.
+   - Only an approval changes inventory.
+   - Approval and stock updates should be atomic once SQL is integrated.
+5. Reports and audits:
+   - Their methods/behaviors are intentionally deferred until after SQL. Keep the comments noting this.
+
+CURRENT PHASE STATUS
+Phase 1 - Structure:
+- Core Java domain models, controllers, account roles, barangay scoping, household roster, batches, and transaction workflows exist.
+- Java sources compile with: javac -d <output-folder> LIB\*.java
+- Recent focused workflow smoke tests passed; test source files were temporary and removed.
+- git diff --check passed on the last checks.
+- The current worktree contains uncommitted changes. Inspect git status before editing or committing.
+
+Phase 2 - SQL (not started):
+- Design relational tables and relationships for barangays, accounts, disasters, households, family members, inventory, inventory batches, donors, donations and their item lines, distributions and their item lines, statuses, audit records, and reports as needed.
+- Add connection and persistence/repository behavior.
+- Keep password hashes and salts, never plaintext passwords. The current UserAccount has hashing/verification but no database rehydration/persistence path yet.
+- Ensure approvals and stock/batch updates run atomically and safely under concurrent use.
+- Decide date representation/validation for the current String-based dates before mapping to SQL DATE/TIMESTAMP.
+- Consider making barangay_id required for operational records and use workspace-scoped controller paths; some older unscoped InventoryController creation overloads remain.
+- Implement automatic audit recording and actual report generation after SQL.
+
+Phase 3 - GUI (not started):
+- Build the UI from the concept proposal/screens and connect it to controllers.
+- Show/enforce barangay workspace and role access.
+- Require a confirmed member roster, support the homeless-household address case, and preserve independent age/category entry.
+- Show transaction statuses and require batch selection where multiple batches have stock.
+
+Phase 4 - Final Testing and Debugging (not started):
+- Test end-to-end GUI/database workflows, roles and barangay boundaries, household registration and aid, approvals/rejections, batch quantities, reports, audits, and accessibility.
+
+RECENT DOCUMENTATION
+- README.md includes MVC/OOP notes, domain decisions, and the four project phases.
+- pleasereadROIEMARbeforeproceeding.txt is a short list of GUI decisions and phase status.
+
+CAUTIONS
+- Do not claim SQL persistence, a working GUI, complete reporting, or automatic audit history; these are not implemented.
+- Inspect current source before relying on this handoff; it is a summary, not a complete raw transcript.
