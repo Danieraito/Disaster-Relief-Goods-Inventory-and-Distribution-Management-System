@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BarangayCare - Donations</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="shell"></div>
+<main class="page" id="main"></main>
+
+<!-- Record donation -->
+<div class="backdrop" id="donModal">
+  <form class="modal wide" id="donForm">
+    <h2>Record donation</h2>
+    <div class="form-error" id="donError"></div>
+    <div id="donBarangay"></div>
+    <div class="form-grid">
+      <div class="field"><label for="fDonor">Donor</label><select id="fDonor" required></select>
+        <div class="hint">Not listed? <button type="button" class="link" id="newDonorLink">Add a donor</button></div></div>
+      <div class="field"><label for="fDate">Date received</label><input id="fDate" type="date" required></div>
+      <div class="field"><label for="fLocation">Receiving location</label><input id="fLocation" placeholder="e.g. Barangay hall storage"></div>
+      <div class="field"><label for="fRef">Delivery / acknowledgment reference</label><input id="fRef" placeholder="e.g. BF-1003 (optional)"></div>
+    </div>
+    <h3>Items received</h3>
+    <p class="muted" style="font-size:12px;margin-bottom:8px">Each line becomes its own stock batch when the donation is posted. Add the item on the Inventory screen first if it is new.</p>
+    <div class="lines" id="donLines"></div>
+    <button type="button" class="btn add-line" id="addDonLine">+ Add item line</button>
+    <label class="check section-gap" id="postWrap"><input type="checkbox" id="fPost" checked> Post to inventory now (I have checked the goods)</label>
+    <p class="muted" id="encoderNote" style="font-size:12px;display:none">Your donation will be saved as <b>pending</b>. A Barangay Official must approve it before stock increases.</p>
+    <div class="modal-actions">
+      <button type="button" class="btn" data-close="donModal">Cancel</button>
+      <button type="submit" class="btn primary" id="donSubmit">Save donation</button>
+    </div>
+  </form>
+</div>
+
+<!-- Donors -->
+<div class="backdrop" id="donorModal">
+  <div class="modal wide">
+    <h2>Donors</h2>
+    <div class="table-wrap"><table class="mini"><thead><tr><th>Donor</th><th>Type</th><th>Contact</th><th>Posted donations</th></tr></thead><tbody id="donorRows"></tbody></table></div>
+    <form id="donorForm">
+      <h3>Add donor</h3>
+      <div class="form-error" id="donorError"></div>
+      <div class="form-grid">
+        <div class="field"><label for="nName">Donor name</label><input id="nName" required></div>
+        <div class="field"><label for="nType">Type</label><select id="nType"><option value="INDIVIDUAL">Individual</option><option value="ORGANIZATION" selected>Organization</option><option value="AGENCY">Government agency</option></select></div>
+        <div class="field"><label for="nPerson">Contact person</label><input id="nPerson"></div>
+        <div class="field"><label for="nDetails">Phone or email</label><input id="nDetails"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" data-close="donorModal">Close</button>
+        <button type="submit" class="btn primary">Add donor</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Receipt -->
+<div class="backdrop" id="receiptModal">
+  <div class="modal wide">
+    <div id="receiptBody"></div>
+    <div class="modal-actions">
+      <button class="btn" data-close="receiptModal">Close</button>
+      <button class="btn primary" id="printReceipt">Print acknowledgment</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reject -->
+<div class="backdrop" id="rejectModal">
+  <form class="modal" id="rejectForm">
+    <h2 id="rejectTitle">Reject donation</h2>
+    <div class="form-error" id="rejectError"></div>
+    <p class="muted">Rejected donations never change stock. The reason is kept in the audit log.</p>
+    <div class="field section-gap"><label for="rReason">Reason</label><textarea id="rReason" required></textarea></div>
+    <div class="modal-actions">
+      <button type="button" class="btn" data-close="rejectModal">Cancel</button>
+      <button type="submit" class="btn primary">Reject donation</button>
+    </div>
+  </form>
+</div>
+
+<script src="app.js"></script>
+<script>
+  (async function () {
+    const me = await startPage('Donations');
+    const main = document.getElementById('main');
+    let donations = [];
+    let donors = [];
+    let items = [];
+    let page = 1;
+    let rejectId = null;
+
+    document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => closeModal(b.dataset.close)));
+
+    async function load() {
+      try {
+        const [d, inv] = await Promise.all([api('/api/donations'), api('/api/inventory')]);
+        donations = d.donations;
+        donors = d.donors;
+        items = inv.items;
+        draw();
+      } catch (e) {
+        main.innerHTML = '<div class="banner danger"><div><div class="t">Could not load donations</div><div class="d">' + esc(e.message) + '</div></div></div>';
+      }
+    }
+
+    const units = d => d.items.reduce((s, i) => s + i.quantity, 0);
+    const donorType = t => ({ INDIVIDUAL: 'Individual', ORGANIZATION: 'Organization', AGENCY: 'Government agency' })[t] || titleCase(t);
+
+    function draw() {
+      const posted = donations.filter(d => d.status === 'APPROVED');
+      const pending = donations.filter(d => d.status === 'PENDING');
+      const month = todayIso().slice(0, 7);
+      const thisMonth = posted.filter(d => (d.date || '').startsWith(month));
+      const latest = posted[0];
+      const activeDonors = donors.filter(d => d.donations > 0).length;
+      const stock = items.reduce((s, i) => s + i.available, 0);
+
+      main.innerHTML =
+        pageHead(me, 'Donations', 'Record incoming goods, keep donor records and issue acknowledgments.',
+          '<div class="head-actions"><button class="btn" id="donorsBtn">Manage donors</button>' +
+          '<button class="btn primary" id="recordBtn"' + (me.canEnterRecords ? '' : ' disabled') + '>Record donation</button></div>') +
+        '<div class="stats">' +
+          '<div class="stat"><div class="cap">Donations this month</div><div class="val">' + thisMonth.length + '</div><div class="note">' + posted.length + ' posted in total</div></div>' +
+          '<div class="stat"><div class="cap">Active donors</div><div class="val">' + activeDonors + '</div><div class="note">Individuals, organizations &amp; agencies</div></div>' +
+          '<div class="stat"><div class="cap">Latest donation</div><div class="val teal">' + (latest ? fmtNum(units(latest)) : '—') + '</div><div class="note">' + (latest ? 'Mixed units · ' + esc(latest.id) : 'None posted yet') + '</div></div>' +
+          '<div class="stat"><div class="cap">Current total stock</div><div class="val">' + fmtNum(stock) + '</div><div class="note">' + items.length + ' active item records</div></div>' +
+        '</div>' +
+        (pending.length ? '<div class="card" style="margin-bottom:24px"><h2>Awaiting approval (' + pending.length + ')</h2>' +
+          '<p class="sub">' + (me.canManageRecords ? 'Check the goods, then post them to stock or reject.' : 'A Barangay Official will review these before stock changes.') + '</p>' +
+          '<div class="table-wrap section-gap"><table><thead><tr><th>Reference</th><th>Donor</th><th>Items</th><th>Recorded by</th><th>Action</th></tr></thead><tbody>' +
+          pending.map(d => '<tr><td>' + esc(d.id) + '<div class="sub2">' + fmtDate(d.date) + '</div></td><td>' + esc(d.donor) + '</td><td>' + linesText(d.items) + '</td><td>' + esc(d.recordedBy || '—') + '</td>' +
+            '<td>' + (me.canManageRecords ? '<div class="actions"><button class="link" data-approve="' + esc(d.id) + '">Post to stock</button><button class="link danger" data-reject="' + esc(d.id) + '">Reject</button></div>' : '<span class="muted">Awaiting approval</span>') + '</td></tr>').join('') +
+          '</tbody></table></div></div>' : '') +
+        '<div class="card"><div class="card-head"><div><h2>Donation history</h2><p class="sub">Stock is posted only after transaction review and confirmation.</p></div>' +
+          (me.canExportReports ? '<button class="btn" id="exportBtn">Export donations</button>' : '') + '</div>' +
+          '<div class="filters section-gap"><input id="search" placeholder="Search donation ID or donor">' +
+            '<select id="period"><option value="">All dates</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="month">This month</option></select>' +
+            '<select id="typeFilter"><option value="">All donor types</option><option value="INDIVIDUAL">Individual</option><option value="ORGANIZATION">Organization</option><option value="AGENCY">Government agency</option></select>' +
+            '<select id="itemFilter"><option value="">All items</option>' + Array.from(new Set(donations.flatMap(d => d.items.map(i => i.name)))).map(n => '<option>' + esc(n) + '</option>').join('') + '</select></div>' +
+          '<div class="table-wrap"><table><thead><tr><th>Reference / received</th><th>Donor</th><th>Items received</th><th>Receiving officer</th><th>Inventory impact</th><th>Action</th></tr></thead>' +
+          '<tbody id="rows"></tbody></table><div id="pager"></div></div></div>' + pageFooter();
+
+      document.getElementById('donorsBtn').addEventListener('click', openDonors);
+      document.getElementById('recordBtn').addEventListener('click', openRecord);
+      if (document.getElementById('exportBtn')) document.getElementById('exportBtn').addEventListener('click', exportCsv);
+      ['search', 'period', 'typeFilter', 'itemFilter'].forEach(id => document.getElementById(id).addEventListener('input', () => { page = 1; drawRows(); }));
+      document.querySelectorAll('[data-approve]').forEach(b => b.addEventListener('click', () => approve(b.dataset.approve)));
+      document.querySelectorAll('[data-reject]').forEach(b => b.addEventListener('click', () => openReject(b.dataset.reject)));
+      drawRows();
+    }
+
+    function visible() {
+      const q = document.getElementById('search').value.trim().toLowerCase();
+      const period = document.getElementById('period').value;
+      const type = document.getElementById('typeFilter').value;
+      const item = document.getElementById('itemFilter').value;
+      let since = '';
+      if (period === 'month') since = todayIso().slice(0, 7) + '-01';
+      else if (period) { const d = new Date(); d.setDate(d.getDate() - Number(period)); since = d.toISOString().slice(0, 10); }
+      return donations.filter(d => d.status !== 'PENDING' &&
+        (!q || (d.id + ' ' + d.donor).toLowerCase().includes(q)) && (!since || d.date >= since) &&
+        (!type || d.donorType === type) && (!item || d.items.some(i => i.name === item)));
+    }
+
+    function drawRows() {
+      const p = paginate(visible(), page, 10, n => { page = n; drawRows(); }, 'donations');
+      document.getElementById('rows').innerHTML = p.rows.map(d =>
+        '<tr><td>' + esc(d.id) + '<div class="sub2">' + fmtDate(d.date) + (me.role === 'ADMIN' ? ' · ' + esc(d.barangay) : '') + '</div></td>' +
+        '<td>' + esc(d.donor) + '<div class="sub2">' + esc(donorType(d.donorType)) + '</div></td>' +
+        '<td>' + linesText(d.items) + '</td>' +
+        '<td>' + esc(d.receivedBy || '—') + '</td>' +
+        '<td>' + (d.status === 'APPROVED' ? '+' + fmtNum(units(d)) + ' ' + (new Set(d.items.map(i => i.unit)).size > 1 ? 'mixed units' : esc(d.items[0].unit)) : statusPill(d.status)) + '</td>' +
+        '<td><button class="link" data-receipt="' + esc(d.id) + '">View receipt</button></td></tr>'
+      ).join('') || '<tr><td colspan="6" class="muted" style="text-align:center;padding:28px">No donations match.</td></tr>';
+      const pager = document.getElementById('pager');
+      pager.innerHTML = '';
+      pager.appendChild(p.footer);
+      document.querySelectorAll('[data-receipt]').forEach(b => b.addEventListener('click', () => receipt(b.dataset.receipt)));
+    }
+
+    // ---- record donation
+    function itemOptions(barangayId) {
+      return '<option value="">Choose item</option>' + items.filter(i => !barangayId || i.barangayId === barangayId)
+        .map(i => '<option value="' + esc(i.id) + '">' + esc(i.name) + ' (' + esc(i.unit) + ')</option>').join('');
+    }
+    function chosenBarangay() {
+      const select = document.getElementById('dBarangay');
+      return select ? select.value : me.barangayId;
+    }
+    function donLine() {
+      const row = document.createElement('div');
+      row.className = 'line donation';
+      row.innerHTML =
+        '<div><label>Item</label><select class="lItem" required>' + itemOptions(chosenBarangay()) + '</select></div>' +
+        '<div><label>Quantity</label><input class="lQty" type="number" min="1" required></div>' +
+        '<div><label>Expiry date (if any)</label><input class="lExpiry" type="date"></div>' +
+        '<button type="button" class="remove" title="Remove line" aria-label="Remove line">✕</button>';
+      row.querySelector('.remove').addEventListener('click', () => {
+        if (document.querySelectorAll('#donLines .line').length > 1) row.remove();
+      });
+      return row;
+    }
+    function fillDonors(selectedId) {
+      document.getElementById('fDonor').innerHTML = '<option value="">Choose donor</option>' +
+        donors.map(d => '<option value="' + esc(d.id) + '"' + (d.id === selectedId ? ' selected' : '') + '>' + esc(d.name) + ' · ' + esc(donorType(d.type)) + '</option>').join('');
+    }
+    function openRecord() {
+      document.getElementById('donForm').reset();
+      document.getElementById('donBarangay').innerHTML = barangayField(me, 'dBarangay');
+      const select = document.getElementById('dBarangay');
+      if (select) select.addEventListener('change', () => { document.getElementById('donLines').innerHTML = ''; document.getElementById('donLines').appendChild(donLine()); });
+      fillDonors();
+      document.getElementById('fDate').value = todayIso();
+      document.getElementById('donLines').innerHTML = '';
+      document.getElementById('donLines').appendChild(donLine());
+      document.getElementById('postWrap').style.display = me.canManageRecords ? 'flex' : 'none';
+      document.getElementById('encoderNote').style.display = me.canManageRecords ? 'none' : 'block';
+      showError('donError', '');
+      openModal('donModal');
+    }
+    document.getElementById('addDonLine').addEventListener('click', () => document.getElementById('donLines').appendChild(donLine()));
+    document.getElementById('newDonorLink').addEventListener('click', openDonors);
+
+    document.getElementById('donForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const rows = Array.from(document.querySelectorAll('#donLines .line'));
+      try {
+        const result = await post('/api/donations', {
+          barangayId: chosenBarangay() || '',
+          donorId: document.getElementById('fDonor').value,
+          date: document.getElementById('fDate').value,
+          receivingLocation: document.getElementById('fLocation').value,
+          deliveryReference: document.getElementById('fRef').value,
+          post: me.canManageRecords && document.getElementById('fPost').checked ? '1' : '0',
+          itemId: rows.map(r => r.querySelector('.lItem').value),
+          quantity: rows.map(r => r.querySelector('.lQty').value),
+          expiry: rows.map(r => r.querySelector('.lExpiry').value)
+        });
+        closeModal('donModal');
+        await load();
+        const d = donations.find(x => x.id === result.id);
+        if (result.posted) {
+          flash('<div class="t">' + esc(result.id) + ' saved · inventory increased by ' + fmtNum(units(d)) + ' recorded units</div><div class="d">' +
+            esc(d.donor) + ' donated ' + d.items.map(i => fmtNum(i.quantity) + ' ' + esc(i.unit) + ' ' + esc(i.name)).join(', ') + '.</div>');
+        } else {
+          flash('<div class="t">' + esc(result.id) + ' submitted for approval</div><div class="d">Stock will increase once a Barangay Official posts it.</div>', 'warn');
+        }
+      } catch (e) { showError('donError', e.message); }
+    });
+
+    // ---- approve / reject
+    async function approve(id) {
+      try {
+        await post('/api/donations/decide', { id: id, decision: 'approve' });
+        await load();
+        flash('<div class="t">' + esc(id) + ' posted to inventory</div><div class="d">New stock batches were created for each line.</div>');
+      } catch (e) { flash('<div class="t">Could not post ' + esc(id) + '</div><div class="d">' + esc(e.message) + '</div>', 'danger'); }
+    }
+    function openReject(id) {
+      rejectId = id;
+      document.getElementById('rejectTitle').textContent = 'Reject ' + id;
+      document.getElementById('rReason').value = '';
+      showError('rejectError', '');
+      openModal('rejectModal');
+    }
+    document.getElementById('rejectForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        await post('/api/donations/decide', { id: rejectId, decision: 'reject', reason: document.getElementById('rReason').value });
+        closeModal('rejectModal');
+        await load();
+      } catch (e) { showError('rejectError', e.message); }
+    });
+
+    // ---- donors
+    function openDonors() {
+      document.getElementById('donorRows').innerHTML = donors.map(d =>
+        '<tr><td>' + esc(d.name) + '<div class="sub2">' + esc(d.id) + '</div></td><td>' + esc(donorType(d.type)) + '</td><td>' +
+        esc([d.contactPerson, d.contactDetails].filter(Boolean).join(' · ') || '—') + '</td><td>' + d.donations + '</td></tr>').join('') ||
+        '<tr><td colspan="4" class="muted">No donors yet.</td></tr>';
+      document.getElementById('donorForm').reset();
+      document.getElementById('donorForm').style.display = me.canEnterRecords ? 'block' : 'none';
+      showError('donorError', '');
+      openModal('donorModal');
+    }
+    document.getElementById('donorForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        const result = await post('/api/donors', {
+          name: document.getElementById('nName').value,
+          type: document.getElementById('nType').value,
+          contactPerson: document.getElementById('nPerson').value,
+          contactDetails: document.getElementById('nDetails').value
+        });
+        const data = await api('/api/donations');
+        donors = data.donors;
+        closeModal('donorModal');
+        // If the donation form is open, select the new donor there.
+        if (document.getElementById('donModal').classList.contains('open')) fillDonors(result.id);
+        else draw();
+      } catch (e) { showError('donorError', e.message); }
+    });
+
+    // ---- receipt
+    function receipt(id) {
+      const d = donations.find(x => x.id === id);
+      document.getElementById('receiptBody').innerHTML =
+        '<div class="receipt"><div class="rhead"><div><div class="org">BarangayCare</div><div class="muted">' + esc(d.barangay) + '</div></div>' +
+          '<div style="text-align:right"><b>Acknowledgment receipt</b><div class="muted">' + esc(d.id) + '</div></div></div>' +
+        '<dl><dt>Donor</dt><dd>' + esc(d.donor) + ' (' + esc(donorType(d.donorType)) + ')</dd>' +
+          '<dt>Date received</dt><dd>' + fmtDate(d.date) + '</dd>' +
+          '<dt>Receiving location</dt><dd>' + esc(d.receivingLocation || '—') + '</dd>' +
+          '<dt>Delivery reference</dt><dd>' + esc(d.deliveryReference || '—') + '</dd>' +
+          '<dt>Status</dt><dd>' + statusPill(d.status) + '</dd>' +
+          '<dt>Recorded by</dt><dd>' + esc(d.recordedBy || '—') + '</dd>' +
+          '<dt>Received by</dt><dd>' + esc(d.receivedBy || 'Not yet posted') + '</dd></dl>' +
+        '<div class="table-wrap"><table class="mini"><thead><tr><th>Item</th><th>Quantity</th><th>Expiry</th></tr></thead><tbody>' +
+          d.items.map(i => '<tr><td>' + esc(i.name) + '</td><td>' + fmtNum(i.quantity) + ' ' + esc(i.unit) + '</td><td>' + fmtDate(i.expiry) + '</td></tr>').join('') +
+        '</tbody></table></div>' +
+        '<p class="muted section-gap" style="font-size:12px">Thank you for supporting relief operations in ' + esc(d.barangay) + '.</p>' +
+        '<div class="sign"><div>Received by (signature over printed name)</div><div>Donor representative</div></div></div>';
+      openModal('receiptModal');
+    }
+    document.getElementById('printReceipt').addEventListener('click', () => {
+      document.body.classList.add('printing-modal');
+      window.print();
+      document.body.classList.remove('printing-modal');
+    });
+
+    function exportCsv() {
+      const rows = [['Donation ID', 'Date', 'Barangay', 'Donor', 'Donor type', 'Item', 'Quantity', 'Unit', 'Expiry', 'Status', 'Received by']];
+      visible().forEach(d => d.items.forEach(i => rows.push([d.id, d.date, d.barangay, d.donor, donorType(d.donorType), i.name, i.quantity, i.unit, i.expiry || '', d.status, d.receivedBy || ''])));
+      downloadCsv('donations_' + todayIso() + '.csv', rows);
+      post('/api/reports/exported', { report: 'Donation history', format: 'CSV' }).catch(() => {});
+    }
+
+    load();
+  })();
+</script>
+</body>
+</html>

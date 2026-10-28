@@ -7,15 +7,31 @@ public class FamilyMember {
     private boolean seniorCitizen;
     private boolean infant;
     private boolean personWithDisability;
+    private boolean pregnant;
 
     public FamilyMember(String memberId, String fullName, int age, boolean seniorCitizen,
             boolean infant, boolean personWithDisability) {
+        this(memberId, fullName, age, seniorCitizen, infant, personWithDisability, false);
+    }
+
+    public FamilyMember(String memberId, String fullName, int age, boolean seniorCitizen,
+            boolean infant, boolean personWithDisability, boolean pregnant) {
         this.memberId = requireText(memberId, "memberId");
         this.fullName = requireText(fullName, "fullName");
         setAge(age);
         this.seniorCitizen = seniorCitizen;
         this.infant = infant;
         this.personWithDisability = personWithDisability;
+        this.pregnant = pregnant;
+    }
+
+    /** Pregnant or lactating, as verified by the barangay (a vulnerable-group category). */
+    public boolean isPregnant() {
+        return pregnant;
+    }
+
+    public void setPregnant(boolean pregnant) {
+        this.pregnant = pregnant;
     }
 
     public String getMemberId() {

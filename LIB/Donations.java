@@ -91,6 +91,12 @@ public class Donations implements BarangayScoped {
         return status;
     }
 
+    // Used only when loading a saved donation from the database (items are added first, while still a draft).
+    void restoreStatus(TransactionStatus savedStatus, UserAccount savedReceivedBy) {
+        this.status = Objects.requireNonNull(savedStatus, "status");
+        this.receivedBy = savedReceivedBy;
+    }
+
     public Donations submit(UserAccount submitter) {
         requirePermission(submitter, submitter != null && submitter.isActive() && submitter.canEnterRecords(),
                 "User does not have permission to submit donations.");

@@ -1,5 +1,7 @@
 package LIB;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.Objects;
 
 public class InventoryBatch {
@@ -48,6 +50,18 @@ public class InventoryBatch {
 
     public int getRemainingQuantity() {
         return remainingQuantity;
+    }
+
+    /** True when the batch has an expiry date that is before the given day. Expired stock must not be released. */
+    public boolean isExpiredOn(LocalDate day) {
+        if (expiryDate == null || expiryDate.trim().isEmpty()) {
+            return false;
+        }
+        try {
+            return LocalDate.parse(expiryDate.trim()).isBefore(day);
+        } catch (DateTimeParseException e) {
+            return false;
+        }
     }
 
     // Used only when loading a saved batch from the database.

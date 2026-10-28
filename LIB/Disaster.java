@@ -93,4 +93,9 @@ public class Disaster implements BarangayScoped {
     public void setStatus(String status) {
         this.status = status;
     }
+
+    /** Every status except CLOSED counts as an active response (older records use ONGOING). */
+    public boolean isActive() {
+        return status == null || !status.trim().equalsIgnoreCase("CLOSED");
+    }
 }

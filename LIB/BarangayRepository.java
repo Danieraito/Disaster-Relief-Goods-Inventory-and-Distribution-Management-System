@@ -39,7 +39,7 @@ public class BarangayRepository {
 
     // The versions below take an open connection so other repositories can reuse them
     // inside one database transaction.
-    static void save(Connection connection, Barangay barangay) throws SQLException {
+    public static void save(Connection connection, Barangay barangay) throws SQLException {
         String sql = "INSERT INTO barangays (barangay_id, name, municipality, province) VALUES (?, ?, ?, ?) "
                 + "ON CONFLICT(barangay_id) DO UPDATE SET name = excluded.name, "
                 + "municipality = excluded.municipality, province = excluded.province";
@@ -53,7 +53,7 @@ public class BarangayRepository {
     }
 
     /** Returns null when no barangay has this id. */
-    static Barangay findById(Connection connection, String barangayId) throws SQLException {
+    public static Barangay findById(Connection connection, String barangayId) throws SQLException {
         if (barangayId == null) {
             return null;
         }

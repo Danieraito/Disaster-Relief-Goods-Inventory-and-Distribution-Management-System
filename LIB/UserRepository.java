@@ -17,6 +17,41 @@ public class UserRepository {
         try (Connection connection = Database.getConnection()) {
             connection.setAutoCommit(false);
             try {
+                save(connection, account);
+                connection.commit();
+            } catch (SQLException | RuntimeException e) {
+                connection.rollback();
+                throw e;
+            }
+        }
+    }
+
+    /** Records that the user just used the system (shown on the User Administration screen). */
+    public void touchLastActive(String accountId) throws SQLException {
+        try (Connection connection = Database.getConnection();
+                PreparedStatement statement = connection.prepareStatement(
+                        "UPDATE users SET last_active = ? WHERE account_id = ?")) {
+            statement.setString(1, Database.now());
+            statement.setString(2, accountId);
+            statement.executeUpdate();
+        }
+    }
+
+    /** Loads one account using an open connection, or null. */
+    public static UserAccount findById(Connection connection, String accountId) throws SQLException {
+        if (accountId == null) {
+            return null;
+        }
+        try (PreparedStatement statement = connection.prepareStatement(SELECT + " WHERE account_id = ?")) {
+            statement.setString(1, accountId);
+            try (ResultSet rs = statement.executeQuery()) {
+                return rs.next() ? read(connection, rs) : null;
+            }
+        }
+    }
+
+    /** Saves an account using an open connection (part of a bigger transaction). */
+    public static void save(Connection connection, UserAccount account) throws SQLException {
                 if (account.getBarangay() != null) {
                     BarangayRepository.save(connection, account.getBarangay());
                 }
@@ -42,12 +77,6 @@ public class UserRepository {
                     statement.setString(9, account.getStatus().name());
                     statement.executeUpdate();
                 }
-                connection.commit();
-            } catch (SQLException | RuntimeException e) {
-                connection.rollback();
-                throw e;
-            }
-        }
     }
 
     public Optional<UserAccount> findByUsername(String username) throws SQLException {
@@ -61,6 +90,29 @@ public class UserRepository {
                 return rs.next() ? Optional.of(read(connection, rs)) : Optional.empty();
             }
         }
+    }
+
+    public Optional<UserAccount> findByEmail(String email) throws SQLException {
+        if (email == null) {
+            return Optional.empty();
+        }
+        try (Connection connection = Database.getConnection();
+                PreparedStatement statement = connection.prepareStatement(
+                        SELECT + " WHERE lower(email) = lower(?)")) {
+            statement.setString(1, email.trim());
+            try (ResultSet rs = statement.executeQuery()) {
+                return rs.next() ? Optional.of(read(connection, rs)) : Optional.empty();
+            }
+        }
+    }
+
+    /** Same as authenticate, but the person signs in with their email address. */
+    public Optional<UserAccount> authenticateByEmail(String email, String password) throws SQLException {
+        Optional<UserAccount> account = findByEmail(email);
+        if (account.isPresent() && account.get().isActive() && account.get().verifyPassword(password)) {
+            return account;
+        }
+        return Optional.empty();
     }
 
     public Optional<UserAccount> findById(String accountId) throws SQLException {

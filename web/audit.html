@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BarangayCare - Audit Logs</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="shell"></div>
+<main class="page" id="main"></main>
+<script src="app.js"></script>
+<script>
+  (async function () {
+    const me = await startPage('Audit Logs');
+    const main = document.getElementById('main');
+    let entries = [];
+    let ownOnly = false;
+    let page = 1;
+
+    try {
+      const data = await api('/api/audit');
+      entries = data.entries;
+      ownOnly = data.ownActivityOnly;
+    } catch (e) {
+      main.innerHTML = '<div class="banner danger"><div><div class="t">Could not load audit logs</div><div class="d">' + esc(e.message) + '</div></div></div>';
+      return;
+    }
+
+    // "Rice 50 sack; Water 500 bottle" -> one line per item
+    const lines = text => text ? esc(text).split('; ').join('<br>') : '';
+
+    // Stock changes are saved as "Rice 50 sack; Water 500 bottle" before and "Rice 48 sack; ..." after.
+    // Shown here as one line per item: "Rice 50 → 48 sack".
+    function beforeAfter(e) {
+      if (!e.beforeValue) return lines(e.afterValue) || '—';
+      const before = e.beforeValue.split('; '), after = (e.afterValue || '').split('; ');
+      if (before.length !== after.length) return esc(e.beforeValue) + ' → ' + esc(e.afterValue || '');
+      return before.map((b, i) => {
+        const x = b.match(/^(.*) (\d+) (\S+)$/), y = after[i].match(/^(.*) (\d+) (\S+)$/);
+        if (x && y && x[1] === y[1]) return esc(x[1]) + ' ' + fmtNum(x[2]) + ' → ' + fmtNum(y[2]) + ' ' + esc(y[3]);
+        return esc(b) + ' → ' + esc(after[i]);
+      }).join('<br>');
+    }
+
+    const modules = Array.from(new Set(entries.map(e => e.module).filter(Boolean))).sort();
+    const actors = Array.from(new Set(entries.map(e => e.actor).filter(Boolean))).sort();
+
+    main.innerHTML =
+      pageHead(me, 'Audit logs', 'Trace who changed a record, when it changed and why.',
+        me.canExportReports ? '<button class="btn" id="exportBtn">Export audit log</button>' : '') +
+      '<div class="banner info"><div><div class="t">Read-only transaction history</div><div class="d">' +
+        (ownOnly ? 'You are seeing your own activity. Officials and Admins can see the whole workspace. ' : '') +
+        'Posted records cannot be overwritten or deleted. Blocked attempts are logged without changing stock.</div></div></div>' +
+      '<div class="card"><h2>Activity ledger</h2><p class="sub">All timestamps in Philippine Standard Time · Asia/Manila</p>' +
+        '<div class="filters section-gap"><input id="search" placeholder="Search reference, actor or reason">' +
+          '<input type="date" id="day" title="Show one day" style="flex:0 0 auto">' +
+          '<select id="moduleFilter"><option value="">All modules</option>' + modules.map(m => '<option>' + esc(m) + '</option>').join('') + '</select>' +
+          '<select id="actorFilter"><option value="">All actors</option>' + actors.map(a => '<option>' + esc(a) + '</option>').join('') + '</select></div>' +
+        '<div class="table-wrap"><table><thead><tr><th>Date / time</th><th>Reference / action</th><th>Actor / role</th><th>Before → after</th><th>Reason / result</th></tr></thead>' +
+        '<tbody id="rows"></tbody></table><div id="pager"></div></div></div>' + pageFooter();
+
+    function visible() {
+      const q = document.getElementById('search').value.trim().toLowerCase();
+      const day = document.getElementById('day').value;
+      const mod = document.getElementById('moduleFilter').value;
+      const actor = document.getElementById('actorFilter').value;
+      return entries.filter(e =>
+        (!q || [e.reference, e.action, e.actor, e.reason, e.beforeValue, e.afterValue].join(' ').toLowerCase().includes(q)) &&
+        (!day || (e.loggedAt || '').startsWith(day)) && (!mod || e.module === mod) && (!actor || e.actor === actor));
+    }
+
+    function drawRows() {
+      const p = paginate(visible(), page, 15, n => { page = n; drawRows(); }, 'events');
+      document.getElementById('rows').innerHTML = p.rows.map(e => {
+        const blocked = /blocked/i.test(e.action);
+        return '<tr><td>' + fmtDateTime(e.loggedAt) + '</td>' +
+          '<td>' + esc(e.reference || '—') + '<div class="sub2' + (blocked ? '" style="color:var(--danger);font-weight:700' : '') + '">' + esc(e.action) + '</div></td>' +
+          '<td>' + esc(e.actor || '—') + '<div class="sub2">' + esc(e.actorRole ? titleCase(e.actorRole) : '') + (me.role === 'ADMIN' && e.barangay ? ' · ' + esc(e.barangay) : '') + '</div></td>' +
+          '<td>' + beforeAfter(e) + '</td>' +
+          '<td>' + esc(e.reason || '—') + '</td></tr>';
+      }).join('') || '<tr><td colspan="5" class="muted" style="text-align:center;padding:28px">No activity matches.</td></tr>';
+      const pager = document.getElementById('pager');
+      pager.innerHTML = '';
+      pager.appendChild(p.footer);
+    }
+
+    ['search', 'day', 'moduleFilter', 'actorFilter'].forEach(id => document.getElementById(id).addEventListener('input', () => { page = 1; drawRows(); }));
+    if (document.getElementById('exportBtn')) {
+      document.getElementById('exportBtn').addEventListener('click', () => {
+        const rows = [['Audit ID', 'Logged at (PST)', 'Module', 'Action', 'Reference', 'Actor', 'Role', 'Barangay', 'Before', 'After', 'Reason']];
+        visible().forEach(e => rows.push([e.id, e.loggedAt, e.module, e.action, e.reference, e.actor, e.actorRole, e.barangay, e.beforeValue, e.afterValue, e.reason]));
+        downloadCsv('audit-log_' + todayIso() + '.csv', rows);
+        post('/api/reports/exported', { report: 'Audit log', format: 'CSV' }).catch(() => {});
+      });
+    }
+    drawRows();
+  })();
+</script>
+</body>
+</html>

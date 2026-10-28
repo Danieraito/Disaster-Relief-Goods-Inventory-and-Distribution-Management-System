@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BarangayCare - Distribution</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="shell"></div>
+<main class="page" id="main"></main>
+
+<!-- New distribution (one household) -->
+<div class="backdrop" id="relModal">
+  <form class="modal wide" id="relForm">
+    <h2>New distribution</h2>
+    <p class="muted" id="relDisaster"></p>
+    <div class="form-error" id="relError"></div>
+    <div class="form-grid section-gap">
+      <div class="field"><label for="fRound">Relief round</label><select id="fRound"></select></div>
+      <div class="field"><label for="fHousehold">Household (head receives the aid)</label><select id="fHousehold" required></select>
+        <div class="hint" id="householdHint"></div></div>
+      <div class="field"><label for="fCenter">Evacuation center</label><select id="fCenter"></select></div>
+      <div class="field"><label for="fDate">Release date</label><input id="fDate" type="date" required></div>
+      <div class="field"><label for="fSlip">Claim slip / receipt no.</label><input id="fSlip" placeholder="Leave blank to use the release ID"></div>
+      <div class="field"><label for="fLocation">Release location (if not at a center)</label><input id="fLocation" placeholder="e.g. Purok 2 covered court"></div>
+    </div>
+    <h3>Items to release</h3>
+    <p class="muted" style="font-size:12px;margin-bottom:8px">Choose the stock batch for each item. Expired and empty batches are not listed. When only one batch can be used it is picked for you.</p>
+    <div class="lines" id="relLines"></div>
+    <button type="button" class="btn add-line" id="addRelLine">+ Add item line</button>
+    <label class="check section-gap" id="postWrap"><input type="checkbox" id="fPost" checked> Confirm release now (goods handed over and claim slip signed)</label>
+    <p class="muted encoderNote" style="font-size:12px;display:none">This release will be saved as <b>pending</b>. A Barangay Official must confirm it before stock is deducted.</p>
+    <div class="modal-actions">
+      <button type="button" class="btn" data-close="relModal">Cancel</button>
+      <button type="submit" class="btn primary">Save release</button>
+    </div>
+  </form>
+</div>
+
+<!-- Release relief packs (many households) -->
+<div class="backdrop" id="bulkModal">
+  <form class="modal wide" id="bulkForm">
+    <h2>Release relief packs</h2>
+    <p class="muted" id="bulkDisaster"></p>
+    <div class="form-error" id="bulkError"></div>
+    <div class="form-grid section-gap">
+      <div class="field"><label for="bPack">Relief pack (one per household)</label><select id="bPack" required></select>
+        <div class="hint" id="packHint"></div></div>
+      <div class="field"><label for="bRound">Relief round</label><select id="bRound"></select></div>
+      <div class="field"><label for="bCenter">Evacuation center</label><select id="bCenter"></select></div>
+      <div class="field"><label for="bDate">Release date</label><input id="bDate" type="date" required></div>
+    </div>
+    <div class="field"><label for="bLocation">Release location (if not at a center)</label><input id="bLocation" placeholder="e.g. Barangay hall"></div>
+    <h3>Stock batch for each item</h3>
+    <div class="lines" id="bBatches"></div>
+    <h3>Households <span class="muted" id="bCount" style="font-weight:400"></span></h3>
+    <p class="muted" style="font-size:12px;margin-bottom:8px">Sorted by priority (vulnerable members, house damage, evacuation). Only households without a release in this round are listed.</p>
+    <div class="head-actions" style="margin-bottom:8px">
+      <button type="button" class="btn" id="bTop">Select top priority the stock can cover</button>
+      <button type="button" class="btn" id="bAll">Select all</button>
+      <button type="button" class="btn" id="bNone">Clear</button>
+    </div>
+    <div class="table-wrap" style="max-height:300px;overflow:auto"><table class="mini"><thead><tr><th></th><th>Household / head</th><th>Members</th><th>Groups</th><th>Priority</th></tr></thead><tbody id="bRows"></tbody></table></div>
+    <p class="section-gap" id="bSummary" style="font-weight:600"></p>
+    <label class="check" id="bPostWrap"><input type="checkbox" id="bPost" checked> Confirm releases now (goods handed over and claim slips signed)</label>
+    <p class="muted encoderNote" style="font-size:12px;display:none">These releases will be saved as <b>pending</b> for a Barangay Official to confirm.</p>
+    <div class="modal-actions">
+      <button type="button" class="btn" data-close="bulkModal">Cancel</button>
+      <button type="submit" class="btn primary" id="bSubmit">Release packs</button>
+    </div>
+  </form>
+</div>
+
+<!-- Relief packs setup -->
+<div class="backdrop" id="packModal">
+  <div class="modal wide">
+    <h2>Relief packs</h2>
+    <p class="muted" style="font-size:13px">A relief pack is the standard set of goods each family receives, for example a Family Food Pack.</p>
+    <div class="table-wrap section-gap"><table class="mini"><thead><tr><th>Pack</th><th>Contents per family</th><th>Families the stock can cover</th><th></th></tr></thead><tbody id="packRows"></tbody></table></div>
+    <form id="packForm">
+      <h3>New relief pack</h3>
+      <div class="form-error" id="packError"></div>
+      <div class="field"><label for="pName">Pack name</label><input id="pName" placeholder="e.g. Family Food Pack" required></div>
+      <div class="lines" id="packLines"></div>
+      <button type="button" class="btn add-line" id="addPackLine">+ Add item</button>
+      <div class="modal-actions">
+        <button type="button" class="btn" data-close="packModal">Close</button>
+        <button type="submit" class="btn primary">Save pack</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Receipt -->
+<div class="backdrop" id="receiptModal">
+  <div class="modal wide">
+    <div id="receiptBody"></div>
+    <div class="modal-actions">
+      <button class="btn" data-close="receiptModal">Close</button>
+      <button class="btn primary" id="printReceipt">Print claim record</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reject -->
+<div class="backdrop" id="rejectModal">
+  <form class="modal" id="rejectForm">
+    <h2 id="rejectTitle">Reject release</h2>
+    <div class="form-error" id="rejectError"></div>
+    <p class="muted">Rejected releases never change stock. The reason is kept in the audit log.</p>
+    <div class="field section-gap"><label for="rReason">Reason</label><textarea id="rReason" required></textarea></div>
+    <div class="modal-actions">
+      <button type="button" class="btn" data-close="rejectModal">Cancel</button>
+      <button type="submit" class="btn primary">Reject release</button>
+    </div>
+  </form>
+</div>
+
+<script src="app.js"></script>
+<script>
+  (async function () {
+    const me = await startPage('Distribution');
+    const main = document.getElementById('main');
+    const params = new URLSearchParams(location.search);
+    let releases = [], disasters = [], centers = [], households = [], items = [], packs = [];
+    let today = todayIso();
+    let current = null;
+    let page = 1;
+    let roundFilter = '';
+    let rejectId = null;
+
+    document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => closeModal(b.dataset.close)));
+
+    async function load() {
+      try {
+        const [r, d, h, inv] = await Promise.all([api('/api/distributions'), api('/api/disasters'), api('/api/households'), api('/api/inventory')]);
+        releases = r.distributions;
+        packs = r.packs;
+        disasters = d.disasters;
+        centers = d.centers;
+        households = h.households;
+        items = inv.items;
+        today = inv.today || today;
+        current = disasters.find(x => x.id === (current ? current.id : params.get('disaster'))) ||
+          disasters.find(disasterIsActive) || disasters[0] || null;
+        draw();
+      } catch (e) {
+        main.innerHTML = '<div class="banner danger"><div><div class="t">Could not load distributions</div><div class="d">' + esc(e.message) + '</div></div></div>';
+      }
+    }
+
+    const units = r => r.items.reduce((s, i) => s + i.quantity, 0);
+    const forEvent = () => releases.filter(r => current && r.disasterId === current.id);
+    const eventHouseholds = () => households.filter(h => h.disasterId === current.id);
+    const usableBatches = item => item.batches.filter(b => b.remainingQuantity > 0 && (!b.expiry || b.expiry >= today));
+    const latestRound = () => Math.max(1, ...forEvent().filter(r => r.status !== 'REJECTED').map(r => r.round || 1));
+    const roundsOf = h => String(h.rounds || '').split(',').filter(Boolean).map(Number);
+    const servedIn = (h, round) => roundsOf(h).includes(round);
+    const scopedPacks = () => packs.filter(p => p.barangayId === current.barangayId);
+    const priorityLabel = p => p >= 10 ? ['High', 'danger'] : p >= 5 ? ['Medium', 'warn'] : ['Normal', 'muted'];
+
+    // Options for a round dropdown: every round so far, plus starting the next one.
+    function roundOptions(selected) {
+      const last = latestRound();
+      let html = '';
+      for (let n = 1; n <= last; n++) html += '<option value="' + n + '"' + (n === selected ? ' selected' : '') + '>Round ' + n + (n === last ? ' (current)' : '') + '</option>';
+      return html + '<option value="' + (last + 1) + '">Start round ' + (last + 1) + '</option>';
+    }
+
+    function draw() {
+      if (!current) {
+        main.innerHTML = pageHead(me, 'Distribution', 'Release available goods to households and retain a claim record.', '') +
+          '<div class="banner info"><div><div class="t">No disaster recorded yet</div><div class="d">Releases are tied to a disaster event and a registered household. Start on the <a href="disasters.html">Disasters</a> screen.</div></div></div>' + pageFooter();
+        return;
+      }
+      const hh = eventHouseholds();
+      const assisted = hh.filter(h => h.assistedBy).length;
+      const round = latestRound();
+      const servedThisRound = hh.filter(h => servedIn(h, round)).length;
+      const list = forEvent();
+      const confirmed = list.filter(r => r.status === 'APPROVED');
+      const pending = releases.filter(r => r.status === 'PENDING');
+      const latest = confirmed[0];
+      const active = disasterIsActive(current);
+      const myPacks = scopedPacks();
+      const bestPack = myPacks.slice().sort((a, b) => b.familiesCovered - a.familiesCovered)[0];
+      const rounds = Array.from(new Set(list.map(r => r.round || 1))).sort((a, b) => a - b);
+
+      main.innerHTML =
+        pageHead(me, 'Distribution', 'Release available goods to households and evacuation centers, and retain a claim record.',
+          '<div class="head-actions"><button class="btn" id="packsBtn">Relief packs</button>' +
+          '<button class="btn" id="bulkBtn"' + (me.canEnterRecords && active ? '' : ' disabled') + '>Release relief packs</button>' +
+          '<button class="btn primary" id="newBtn"' + (me.canEnterRecords && active ? '' : ' disabled title="Reopen the disaster to release goods"') + '>New distribution</button></div>') +
+        '<div class="context"><div><div class="t">' + esc(current.name) + ' · ' + esc(current.id) + '</div>' +
+          '<div class="d">' + fmtDate(current.date) + ' · ' + esc(current.affectedAreas || '') + ' · ' + esc(titleCase(current.severity)) + ' severity' +
+          (me.role === 'ADMIN' ? ' · ' + esc(current.barangay) : '') + '</div></div>' +
+          '<div class="right"><span class="tag' + (active ? '' : ' closed') + '">' + (active ? 'Active response · round ' + round : 'Closed event') + '</span>' +
+          '<select id="changeDisaster" aria-label="Change disaster">' + disasters.map(d => '<option value="' + esc(d.id) + '"' + (d.id === current.id ? ' selected' : '') + '>' +
+            esc(d.name) + (disasterIsActive(d) ? '' : ' (closed)') + '</option>').join('') + '</select></div></div>' +
+        '<div class="stats">' +
+          '<div class="stat"><div class="cap">Families assisted</div><div class="val teal">' + fmtNum(assisted) + '</div><div class="note">At least one release · ' + (hh.length ? Math.round(assisted * 100 / hh.length) : 0) + '% of ' + fmtNum(hh.length) + '</div></div>' +
+          '<div class="stat"><div class="cap">Round ' + round + ' progress</div><div class="val">' + fmtNum(servedThisRound) + ' / ' + fmtNum(hh.length) + '</div><div class="note">' + fmtNum(hh.length - servedThisRound) + ' households still waiting this round</div></div>' +
+          '<div class="stat"><div class="cap">Latest release</div><div class="val">' + (latest ? fmtNum(units(latest)) : '—') + '</div><div class="note">' + (latest ? 'Mixed units · ' + latest.items.length + ' item line' + (latest.items.length === 1 ? '' : 's') + ' · ' + esc(latest.id) : 'No releases yet') + '</div></div>' +
+          '<div class="stat"><div class="cap">' + (bestPack ? esc(bestPack.name) + ' coverage' : 'Relief packs') + '</div><div class="val' + (bestPack && bestPack.familiesCovered < hh.length - servedThisRound ? ' warn' : '') + '">' + (bestPack ? fmtNum(bestPack.familiesCovered) : '—') + '</div>' +
+            '<div class="note">' + (bestPack ? 'Families the usable stock can cover' : 'Set up a pack with Relief packs') + '</div></div>' +
+        '</div>' +
+        (pending.length ? '<div class="card" style="margin-bottom:24px"><h2>Awaiting confirmation (' + pending.length + ')</h2>' +
+          '<p class="sub">' + (me.canApprove ? 'Confirm once goods are handed over. Stock is deducted only on confirmation.' : 'A Barangay Official will confirm these before stock is deducted.') + '</p>' +
+          '<div class="table-wrap section-gap"><table><thead><tr><th>Release</th><th>Household</th><th>Items</th><th>Recorded by</th><th>Action</th></tr></thead><tbody>' +
+          pending.map(r => '<tr><td>' + esc(r.id) + '<div class="sub2">' + esc(r.disaster) + ' · round ' + (r.round || 1) + '</div></td><td>' + esc(r.household) + '</td><td>' + linesText(r.items) + '</td><td>' + esc(r.recordedBy || '—') + '</td>' +
+            '<td>' + (me.canApprove ? '<div class="actions"><button class="link" data-approve="' + esc(r.id) + '">Confirm release</button><button class="link danger" data-reject="' + esc(r.id) + '">Reject</button></div>' : '<span class="muted">Awaiting confirmation</span>') + '</td></tr>').join('') +
+          '</tbody></table></div></div>' : '') +
+        '<div class="card"><div class="card-head"><div><h2>Distribution history</h2><p class="sub">All confirmed releases are tied to a disaster, round, household, barangay and officer.</p></div>' +
+          (me.canExportReports ? '<button class="btn" id="exportBtn">Export releases</button>' : '') + '</div>' +
+          '<div class="filters section-gap"><input id="search" placeholder="Search release ID, evacuation center or household representative">' +
+            '<select id="roundFilter"><option value="">All rounds</option>' + rounds.map(n => '<option value="' + n + '"' + (String(n) === roundFilter ? ' selected' : '') + '>Round ' + n + '</option>').join('') + '</select>' +
+            '<select id="centerFilter"><option value="">All evacuation centers</option>' + centers.filter(c => c.barangayId === current.barangayId).map(c => '<option value="' + esc(c.id) + '">' + esc(c.name) + '</option>').join('') + '</select>' +
+            '<select id="itemFilter"><option value="">All items</option>' + Array.from(new Set(list.flatMap(r => r.items.map(i => i.name)))).map(n => '<option>' + esc(n) + '</option>').join('') + '</select></div>' +
+          '<div class="table-wrap"><table><thead><tr><th>Release / date</th><th>Round</th><th>Evacuation center / barangay</th><th>Items released</th><th>Releasing officer</th><th>Household representative</th><th>Status</th><th></th></tr></thead>' +
+          '<tbody id="rows"></tbody></table><div id="pager"></div></div></div>' + pageFooter();
+
+      document.getElementById('changeDisaster').addEventListener('change', e => {
+        current = disasters.find(d => d.id === e.target.value);
+        page = 1;
+        roundFilter = '';
+        history.replaceState(null, '', 'distribution.html?disaster=' + encodeURIComponent(current.id));
+        draw();
+      });
+      document.getElementById('newBtn').addEventListener('click', () => openNew());
+      document.getElementById('bulkBtn').addEventListener('click', openBulk);
+      document.getElementById('packsBtn').addEventListener('click', openPacks);
+      if (document.getElementById('exportBtn')) document.getElementById('exportBtn').addEventListener('click', exportCsv);
+      document.getElementById('roundFilter').addEventListener('input', e => { roundFilter = e.target.value; page = 1; drawRows(); });
+      ['search', 'centerFilter', 'itemFilter'].forEach(id => document.getElementById(id).addEventListener('input', () => { page = 1; drawRows(); }));
+      document.querySelectorAll('[data-approve]').forEach(b => b.addEventListener('click', () => approve(b.dataset.approve)));
+      document.querySelectorAll('[data-reject]').forEach(b => b.addEventListener('click', () => openReject(b.dataset.reject)));
+      drawRows();
+    }
+
+    function visible() {
+      const q = document.getElementById('search').value.trim().toLowerCase();
+      const center = document.getElementById('centerFilter').value;
+      const item = document.getElementById('itemFilter').value;
+      return forEvent().filter(r => r.status !== 'PENDING' &&
+        (!q || (r.id + ' ' + (r.center || '') + ' ' + r.household).toLowerCase().includes(q)) &&
+        (!roundFilter || String(r.round || 1) === roundFilter) &&
+        (!center || r.centerId === center) && (!item || r.items.some(i => i.name === item)));
+    }
+
+    function drawRows() {
+      const p = paginate(visible(), page, 10, n => { page = n; drawRows(); }, 'releases');
+      document.getElementById('rows').innerHTML = p.rows.map(r =>
+        '<tr><td>' + esc(r.id) + '<div class="sub2">' + fmtDate(r.date) + '</div></td>' +
+        '<td>' + (r.round || 1) + '</td>' +
+        '<td>' + esc(r.center || r.releaseLocation || '—') + '<div class="sub2">' + esc(r.barangay) + '</div></td>' +
+        '<td>' + linesText(r.items) + '</td>' +
+        '<td>' + esc(r.releasedBy || '—') + '</td>' +
+        '<td>' + esc(r.household) + '<div class="sub2">' + esc(r.householdId) + '</div></td>' +
+        '<td>' + (r.status === 'APPROVED' ? '<span class="pill-st ok">Confirmed</span>' : statusPill(r.status)) + '</td>' +
+        '<td><button class="link" data-receipt="' + esc(r.id) + '">View receipt</button></td></tr>'
+      ).join('') || '<tr><td colspan="8" class="muted" style="text-align:center;padding:28px">No releases match.</td></tr>';
+      const pager = document.getElementById('pager');
+      pager.innerHTML = '';
+      pager.appendChild(p.footer);
+      document.querySelectorAll('[data-receipt]').forEach(b => b.addEventListener('click', () => receipt(b.dataset.receipt)));
+    }
+
+    function centerOptions() {
+      return '<option value="">None (use release location)</option>' +
+        centers.filter(c => c.barangayId === current.barangayId).map(c => '<option value="' + esc(c.id) + '">' + esc(c.name) + '</option>').join('');
+    }
+
+    function batchLabel(item, b) {
+      return esc(b.id) + ' · ' + fmtNum(b.remainingQuantity) + ' ' + esc(item.unit) + ' left' + (b.expiry ? ' · exp ' + fmtDate(b.expiry) : '');
+    }
+    function batchOptions(itemId) {
+      const item = items.find(i => i.id === itemId);
+      if (!item) return '<option value="">Choose an item first</option>';
+      const usable = usableBatches(item);
+      if (!usable.length) return '<option value="">No usable stock</option>';
+      if (usable.length === 1) return '<option value="' + esc(usable[0].id) + '">' + batchLabel(item, usable[0]) + '</option>';
+      return '<option value="">Select batch (' + usable.length + ' available)</option>' + usable.map(b => '<option value="' + esc(b.id) + '">' + batchLabel(item, b) + '</option>').join('');
+    }
+
+    function setApprovalNotes(modal, checkboxWrap) {
+      document.getElementById(checkboxWrap).style.display = me.canApprove ? 'flex' : 'none';
+      document.querySelector('#' + modal + ' .encoderNote').style.display = me.canApprove ? 'none' : 'block';
+    }
+
+    // ---- new distribution (one household)
+    function relLine() {
+      const row = document.createElement('div');
+      row.className = 'line release';
+      const choices = items.filter(i => i.barangayId === current.barangayId && usableBatches(i).length);
+      row.innerHTML =
+        '<div><label>Item</label><select class="lItem" required><option value="">Choose item</option>' +
+          choices.map(i => '<option value="' + esc(i.id) + '">' + esc(i.name) + ' · ' + fmtNum(i.available) + ' ' + esc(i.unit) + ' usable</option>').join('') + '</select></div>' +
+        '<div><label>Stock batch</label><select class="lBatch" required><option value="">Choose an item first</option></select></div>' +
+        '<div><label>Quantity</label><input class="lQty" type="number" min="1" required></div>' +
+        '<button type="button" class="remove" title="Remove line" aria-label="Remove line">✕</button>';
+      row.querySelector('.lItem').addEventListener('change', e => { row.querySelector('.lBatch').innerHTML = batchOptions(e.target.value); });
+      row.querySelector('.remove').addEventListener('click', () => {
+        if (document.querySelectorAll('#relLines .line').length > 1) row.remove();
+      });
+      return row;
+    }
+    function fillHouseholds() {
+      const round = Number(document.getElementById('fRound').value);
+      const waiting = eventHouseholds().filter(h => !servedIn(h, round)).sort((a, b) => b.priority - a.priority);
+      const keep = document.getElementById('fHousehold').value || params.get('household');
+      document.getElementById('fHousehold').innerHTML = '<option value="">Choose household</option>' +
+        waiting.map(h => '<option value="' + esc(h.id) + '">' + esc(h.id + ' · ' + h.head + ' · ' + h.members + ' members · ' + priorityLabel(h.priority)[0] + ' priority') + '</option>').join('');
+      if (keep && waiting.some(h => h.id === keep)) document.getElementById('fHousehold').value = keep;
+      document.getElementById('householdHint').textContent = waiting.length
+        ? 'Households without a release in round ' + round + ', highest priority first.'
+        : 'Every household already has a release in round ' + round + '. Start the next round to release again.';
+    }
+    function openNew() {
+      document.getElementById('relForm').reset();
+      document.getElementById('relDisaster').textContent = 'For ' + current.name + ' (' + current.id + ')';
+      document.getElementById('fRound').innerHTML = roundOptions(latestRound());
+      document.getElementById('fHousehold').innerHTML = '';
+      fillHouseholds();
+      document.getElementById('fCenter').innerHTML = centerOptions();
+      document.getElementById('fDate').value = todayIso();
+      document.getElementById('relLines').innerHTML = '';
+      document.getElementById('relLines').appendChild(relLine());
+      setApprovalNotes('relModal', 'postWrap');
+      showError('relError', '');
+      openModal('relModal');
+    }
+    document.getElementById('fRound').addEventListener('change', fillHouseholds);
+    document.getElementById('addRelLine').addEventListener('click', () => document.getElementById('relLines').appendChild(relLine()));
+
+    document.getElementById('relForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const rows = Array.from(document.querySelectorAll('#relLines .line'));
+      try {
+        const result = await post('/api/distributions', {
+          disasterId: current.id,
+          round: document.getElementById('fRound').value,
+          householdId: document.getElementById('fHousehold').value,
+          centerId: document.getElementById('fCenter').value,
+          date: document.getElementById('fDate').value,
+          receiptReference: document.getElementById('fSlip').value,
+          releaseLocation: document.getElementById('fLocation').value,
+          post: me.canApprove && document.getElementById('fPost').checked ? '1' : '0',
+          itemId: rows.map(r => r.querySelector('.lItem').value),
+          batchId: rows.map(r => r.querySelector('.lBatch').value),
+          quantity: rows.map(r => r.querySelector('.lQty').value)
+        });
+        closeModal('relModal');
+        history.replaceState(null, '', 'distribution.html?disaster=' + encodeURIComponent(current.id));
+        params.delete('household');
+        await load();
+        const r = releases.find(x => x.id === result.id);
+        if (result.posted) {
+          const total = items.filter(i => i.barangayId === current.barangayId).reduce((s, i) => s + i.available, 0);
+          flash('<div class="t">' + esc(r.id) + ' confirmed · Release received by ' + esc(r.household) + (r.center ? ' at ' + esc(r.center) : '') + '</div>' +
+            '<div class="d">' + r.items.map(i => fmtNum(i.quantity) + ' ' + esc(i.unit) + ' ' + esc(i.name)).join(', ') + ' released (round ' + r.round + '). Stock deducted by ' + fmtNum(units(r)) +
+            ' recorded units; usable inventory is now ' + fmtNum(total) + ' mixed units.</div>');
+        } else {
+          flash('<div class="t">' + esc(r.id) + ' submitted for confirmation</div><div class="d">Stock will be deducted once a Barangay Official confirms the release.</div>', 'warn');
+        }
+      } catch (e) { showError('relError', e.message); }
+    });
+
+    // ---- release relief packs (many households)
+    const selectedPack = () => packs.find(p => p.id === document.getElementById('bPack').value);
+    const bulkTicked = () => Array.from(document.querySelectorAll('#bRows input:checked')).map(c => c.value);
+
+    function bulkRefresh() {
+      const pack = selectedPack();
+      const round = Number(document.getElementById('bRound').value);
+      document.getElementById('packHint').textContent = pack
+        ? pack.lines.map(l => l.quantity + ' ' + l.unit + ' ' + l.name).join(' + ') + ' · stock covers ' + pack.familiesCovered + ' families'
+        : 'Set up a pack first with the Relief packs button.';
+      document.getElementById('bBatches').innerHTML = pack ? pack.lines.map(l =>
+        '<div class="line release" style="grid-template-columns:1.2fr 2fr"><div><label>Item</label><div style="padding:8px 0">' + esc(l.name) + ' · ' + l.quantity + ' ' + esc(l.unit) + ' per family</div></div>' +
+        '<div><label>Stock batch</label><select class="bBatch" data-item="' + esc(l.itemId) + '">' + batchOptions(l.itemId) + '</select></div></div>').join('')
+        : '<p class="muted" style="padding:10px 0">No pack chosen.</p>';
+      const waiting = eventHouseholds().filter(h => !servedIn(h, round)).sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id));
+      document.getElementById('bRows').innerHTML = waiting.map(h => {
+        const pl = priorityLabel(h.priority);
+        const g = [h.seniors && 'Senior', h.pwd && 'PWD', h.pregnant && 'Pregnant', h.infants && 'Infant'].filter(Boolean).join(', ') || '—';
+        return '<tr><td><input type="checkbox" value="' + esc(h.id) + '"></td><td>' + esc(h.id) + '<div class="sub2">' + esc(h.head) + '</div></td><td>' + h.members + '</td><td>' + esc(g) + '</td>' +
+          '<td><span class="pill-st ' + pl[1] + '">' + pl[0] + '</span> <span class="muted">(' + h.priority + ')</span></td></tr>';
+      }).join('') || '<tr><td colspan="5" class="muted">Every household already has a release in round ' + round + '. Choose "Start round ' + (latestRound() + 1) + '" to release again.</td></tr>';
+      document.querySelectorAll('#bRows input').forEach(c => c.addEventListener('change', bulkSummary));
+      bulkSummary();
+    }
+    function bulkSummary() {
+      const pack = selectedPack();
+      const n = bulkTicked().length;
+      document.getElementById('bCount').textContent = '(' + n + ' selected)';
+      if (!pack) { document.getElementById('bSummary').textContent = ''; return; }
+      const totals = pack.lines.map(l => fmtNum(l.quantity * n) + ' ' + l.unit + ' ' + l.name).join(', ');
+      const over = n > pack.familiesCovered;
+      document.getElementById('bSummary').innerHTML = n ? (n + ' × ' + esc(pack.name) + ' = ' + esc(totals) +
+        (over ? '<br><span style="color:var(--danger)">Stock covers only ' + pack.familiesCovered + ' families. Untick some households or add stock.</span>' : '')) : '';
+      document.getElementById('bSubmit').textContent = n ? 'Release ' + n + ' pack' + (n === 1 ? '' : 's') : 'Release packs';
+    }
+    function openBulk() {
+      const myPacks = scopedPacks();
+      document.getElementById('bulkForm').reset();
+      document.getElementById('bulkDisaster').textContent = 'For ' + current.name + ' (' + current.id + ')';
+      document.getElementById('bPack').innerHTML = myPacks.length
+        ? myPacks.map(p => '<option value="' + esc(p.id) + '">' + esc(p.name) + '</option>').join('')
+        : '<option value="">No relief packs yet</option>';
+      document.getElementById('bRound').innerHTML = roundOptions(latestRound());
+      document.getElementById('bCenter').innerHTML = centerOptions();
+      document.getElementById('bDate').value = todayIso();
+      setApprovalNotes('bulkModal', 'bPostWrap');
+      showError('bulkError', '');
+      bulkRefresh();
+      openModal('bulkModal');
+    }
+    document.getElementById('bPack').addEventListener('change', bulkRefresh);
+    document.getElementById('bRound').addEventListener('change', bulkRefresh);
+    document.getElementById('bAll').addEventListener('click', () => { document.querySelectorAll('#bRows input').forEach(c => { c.checked = true; }); bulkSummary(); });
+    document.getElementById('bNone').addEventListener('click', () => { document.querySelectorAll('#bRows input').forEach(c => { c.checked = false; }); bulkSummary(); });
+    // Ticks the highest-priority households, as many as the usable stock can cover.
+    document.getElementById('bTop').addEventListener('click', () => {
+      const pack = selectedPack();
+      const limit = pack ? pack.familiesCovered : 0;
+      document.querySelectorAll('#bRows input').forEach((c, i) => { c.checked = i < limit; });
+      bulkSummary();
+    });
+
+    document.getElementById('bulkForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const pack = selectedPack();
+      const chosen = bulkTicked();
+      if (!pack) { showError('bulkError', 'Set up a relief pack first.'); return; }
+      if (!chosen.length) { showError('bulkError', 'Tick at least one household.'); return; }
+      const batches = Array.from(document.querySelectorAll('#bBatches .bBatch'));
+      try {
+        const result = await post('/api/distributions/bulk', {
+          disasterId: current.id,
+          packId: pack.id,
+          round: document.getElementById('bRound').value,
+          centerId: document.getElementById('bCenter').value,
+          date: document.getElementById('bDate').value,
+          releaseLocation: document.getElementById('bLocation').value,
+          post: me.canApprove && document.getElementById('bPost').checked ? '1' : '0',
+          householdId: chosen,
+          batchItemId: batches.map(b => b.dataset.item),
+          batchId: batches.map(b => b.value)
+        });
+        closeModal('bulkModal');
+        await load();
+        const ids = result.ids;
+        flash('<div class="t">' + ids.length + ' ' + esc(pack.name) + (ids.length === 1 ? '' : 's') + (result.posted ? ' released' : ' submitted for confirmation') +
+          ' · round ' + esc(document.getElementById('bRound').value) + '</div><div class="d">' + esc(ids[0]) + (ids.length > 1 ? ' to ' + esc(ids[ids.length - 1]) : '') +
+          (result.posted ? '. Stock was deducted from the selected batches.' : '. Stock will be deducted once a Barangay Official confirms them.') + '</div>', result.posted ? 'ok' : 'warn');
+      } catch (e) { showError('bulkError', e.message); }
+    });
+
+    // ---- relief pack setup
+    function packLine() {
+      const row = document.createElement('div');
+      row.className = 'line donation';
+      row.style.gridTemplateColumns = '2fr 1fr auto';
+      row.innerHTML =
+        '<div><label>Item</label><select class="pItem" required><option value="">Choose item</option>' +
+          items.filter(i => i.barangayId === current.barangayId).map(i => '<option value="' + esc(i.id) + '">' + esc(i.name) + ' (' + esc(i.unit) + ')</option>').join('') + '</select></div>' +
+        '<div><label>Quantity per family</label><input class="pQty" type="number" min="1" required></div>' +
+        '<button type="button" class="remove" title="Remove item" aria-label="Remove item">✕</button>';
+      row.querySelector('.remove').addEventListener('click', () => {
+        if (document.querySelectorAll('#packLines .line').length > 1) row.remove();
+      });
+      return row;
+    }
+    function drawPacks() {
+      document.getElementById('packRows').innerHTML = scopedPacks().map(p =>
+        '<tr><td>' + esc(p.name) + '<div class="sub2">' + esc(p.id) + '</div></td>' +
+        '<td>' + p.lines.map(l => fmtNum(l.quantity) + ' ' + esc(l.unit) + ' ' + esc(l.name) + ' <span class="muted">(' + fmtNum(l.usable) + ' usable)</span>').join('<br>') + '</td>' +
+        '<td><b>' + fmtNum(p.familiesCovered) + '</b> families</td>' +
+        '<td>' + (me.canManageRecords ? '<button class="link danger" data-delpack="' + esc(p.id) + '">Remove</button>' : '') + '</td></tr>').join('') ||
+        '<tr><td colspan="4" class="muted">No relief packs yet.</td></tr>';
+      document.querySelectorAll('[data-delpack]').forEach(b => b.addEventListener('click', async () => {
+        try {
+          await post('/api/packs/delete', { id: b.dataset.delpack });
+          await load();
+          drawPacks();
+        } catch (e) { showError('packError', e.message); }
+      }));
+    }
+    function openPacks() {
+      drawPacks();
+      document.getElementById('packForm').reset();
+      document.getElementById('packForm').style.display = me.canManageRecords ? 'block' : 'none';
+      document.getElementById('packLines').innerHTML = '';
+      document.getElementById('packLines').appendChild(packLine());
+      showError('packError', '');
+      openModal('packModal');
+    }
+    document.getElementById('addPackLine').addEventListener('click', () => document.getElementById('packLines').appendChild(packLine()));
+    document.getElementById('packForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const rows = Array.from(document.querySelectorAll('#packLines .line'));
+      try {
+        await post('/api/packs', {
+          barangayId: current.barangayId,
+          name: document.getElementById('pName').value,
+          itemId: rows.map(r => r.querySelector('.pItem').value),
+          quantity: rows.map(r => r.querySelector('.pQty').value)
+        });
+        await load();
+        openPacks();
+      } catch (e) { showError('packError', e.message); }
+    });
+
+    // ---- approve / reject
+    async function approve(id) {
+      try {
+        await post('/api/distributions/decide', { id: id, decision: 'approve' });
+        await load();
+        flash('<div class="t">' + esc(id) + ' confirmed</div><div class="d">Stock was deducted from the selected batches.</div>');
+      } catch (e) { flash('<div class="t">Could not confirm ' + esc(id) + '</div><div class="d">' + esc(e.message) + '</div>', 'danger'); }
+    }
+    function openReject(id) {
+      rejectId = id;
+      document.getElementById('rejectTitle').textContent = 'Reject ' + id;
+      document.getElementById('rReason').value = '';
+      showError('rejectError', '');
+      openModal('rejectModal');
+    }
+    document.getElementById('rejectForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        await post('/api/distributions/decide', { id: rejectId, decision: 'reject', reason: document.getElementById('rReason').value });
+        closeModal('rejectModal');
+        await load();
+      } catch (e) { showError('rejectError', e.message); }
+    });
+
+    // ---- receipt
+    function receipt(id) {
+      const r = releases.find(x => x.id === id);
+      document.getElementById('receiptBody').innerHTML =
+        '<div class="receipt"><div class="rhead"><div><div class="org">BarangayCare</div><div class="muted">' + esc(r.barangay) + '</div></div>' +
+          '<div style="text-align:right"><b>Relief claim record</b><div class="muted">' + esc(r.id) + '</div></div></div>' +
+        '<dl><dt>Disaster</dt><dd>' + esc(r.disaster) + ' · round ' + (r.round || 1) + '</dd>' +
+          '<dt>Household</dt><dd>' + esc(r.household) + ' (' + esc(r.householdId) + ')<div class="muted">' + esc(r.householdAddress) + '</div></dd>' +
+          '<dt>Released at</dt><dd>' + esc(r.center || r.releaseLocation || '—') + '</dd>' +
+          '<dt>Release date</dt><dd>' + fmtDate(r.date) + '</dd>' +
+          '<dt>Claim slip no.</dt><dd>' + esc(r.receiptReference) + '</dd>' +
+          '<dt>Status</dt><dd>' + (r.status === 'APPROVED' ? 'Confirmed' : statusPill(r.status)) + '</dd>' +
+          '<dt>Releasing officer</dt><dd>' + esc(r.releasedBy || 'Not yet confirmed') + '</dd></dl>' +
+        '<div class="table-wrap"><table class="mini"><thead><tr><th>Item</th><th>Batch</th><th>Quantity</th></tr></thead><tbody>' +
+          r.items.map(i => '<tr><td>' + esc(i.name) + '</td><td>' + esc(i.batchId) + '</td><td>' + fmtNum(i.quantity) + ' ' + esc(i.unit) + '</td></tr>').join('') +
+        '</tbody></table></div>' +
+        '<div class="sign"><div>Received by (household head signature)</div><div>Releasing officer</div></div></div>';
+      openModal('receiptModal');
+    }
+    document.getElementById('printReceipt').addEventListener('click', () => {
+      document.body.classList.add('printing-modal');
+      window.print();
+      document.body.classList.remove('printing-modal');
+    });
+
+    function exportCsv() {
+      const rows = [['Release ID', 'Date', 'Round', 'Disaster', 'Barangay', 'Evacuation center / location', 'Household ID', 'Household head', 'Item', 'Batch', 'Quantity', 'Unit', 'Status', 'Released by']];
+      visible().forEach(r => r.items.forEach(i => rows.push([r.id, r.date, r.round || 1, r.disaster, r.barangay, r.center || r.releaseLocation || '', r.householdId, r.household, i.name, i.batchId, i.quantity, i.unit, r.status, r.releasedBy || ''])));
+      downloadCsv('releases_' + current.id + '_' + todayIso() + '.csv', rows);
+      post('/api/reports/exported', { report: 'Distribution history · ' + current.name, format: 'CSV' }).catch(() => {});
+    }
+
+    await load();
+    // Opened from a household's "Release goods" button: start the form for that household.
+    if (params.get('household') && current && me.canEnterRecords && disasterIsActive(current)) openNew();
+  })();
+</script>
+</body>
+</html>

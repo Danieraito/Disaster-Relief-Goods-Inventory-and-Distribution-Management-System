@@ -38,6 +38,17 @@ public class BeneficiaryController {
         beneficiary.setHouseholdHead(memberId);
     }
 
+    /** Checks that the user may change this household's details and members. */
+    public void requireCanEdit(Beneficiaries beneficiary, UserAccount editor) {
+        Objects.requireNonNull(beneficiary, "beneficiary");
+        requireWorkspaceEditor(beneficiary.getDisaster(), editor);
+    }
+
+    public void removeFamilyMember(Beneficiaries beneficiary, String memberId, UserAccount editor) {
+        requireCanEdit(beneficiary, editor);
+        beneficiary.removeFamilyMember(memberId);
+    }
+
     private void requireWorkspaceEditor(Disaster disaster, UserAccount editor) {
         if (disaster == null || editor == null || !editor.isActive()
                 || !editor.canEnterRecords() || !editor.canAccessBarangay(disaster.getBarangay())) {

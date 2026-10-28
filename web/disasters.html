@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BarangayCare - Disasters</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="shell"></div>
+<main class="page" id="main"></main>
+
+<!-- Record disaster -->
+<div class="backdrop" id="disasterModal">
+  <form class="modal" id="disasterForm">
+    <h2>Record disaster event</h2>
+    <div class="form-error" id="disasterError"></div>
+    <div id="disasterBarangay"></div>
+    <div class="field"><label for="dName">Disaster name</label><input id="dName" placeholder="e.g. Typhoon Amihan" required></div>
+    <div class="form-grid">
+      <div class="field"><label for="dType">Type</label><select id="dType"></select></div>
+      <div class="field"><label for="dDate">Date of occurrence</label><input id="dDate" type="date" required></div>
+      <div class="field"><label for="dSeverity">Severity</label>
+        <select id="dSeverity"><option value="HIGH">High</option><option value="MODERATE" selected>Moderate</option><option value="LOW">Low</option></select></div>
+      <div class="field"><label for="dAreas">Affected areas</label><input id="dAreas" placeholder="e.g. Puroks 1, 2 & 3" required></div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn" data-close="disasterModal">Cancel</button>
+      <button type="submit" class="btn primary">Save disaster</button>
+    </div>
+  </form>
+</div>
+
+<!-- Close / reopen -->
+<div class="backdrop" id="statusModal">
+  <form class="modal" id="statusForm">
+    <h2 id="statusTitle">Close disaster</h2>
+    <div class="form-error" id="statusError"></div>
+    <p class="muted" id="statusText"></p>
+    <div class="field section-gap"><label for="sReason">Reason</label><textarea id="sReason" placeholder="e.g. All registered households assisted; evacuation center closed."></textarea></div>
+    <div class="modal-actions">
+      <button type="button" class="btn" data-close="statusModal">Cancel</button>
+      <button type="submit" class="btn primary" id="statusSubmit">Close disaster</button>
+    </div>
+  </form>
+</div>
+
+<!-- Evacuation center -->
+<div class="backdrop" id="centerModal">
+  <form class="modal" id="centerForm">
+    <h2>Add evacuation center</h2>
+    <div class="form-error" id="centerError"></div>
+    <div id="centerBarangay"></div>
+    <div class="field"><label for="cName">Center name</label><input id="cName" placeholder="e.g. Maligaya Elementary School" required></div>
+    <div class="form-grid">
+      <div class="field"><label for="cAddress">Address</label><input id="cAddress" required></div>
+      <div class="field"><label for="cCapacity">Capacity (people)</label><input id="cCapacity" type="number" min="1" required></div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn" data-close="centerModal">Cancel</button>
+      <button type="submit" class="btn primary">Save center</button>
+    </div>
+  </form>
+</div>
+
+<script src="app.js"></script>
+<script>
+  (async function () {
+    const me = await startPage('Disasters');
+    const main = document.getElementById('main');
+    let data = { disasters: [], centers: [], types: [] };
+    let tab = 'active';
+    let page = 1;
+    let statusTarget = null;
+
+    document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => closeModal(b.dataset.close)));
+
+    async function load() {
+      try {
+        data = await api('/api/disasters');
+        draw();
+      } catch (e) {
+        main.innerHTML = '<div class="banner danger"><div><div class="t">Could not load disasters</div><div class="d">' + esc(e.message) + '</div></div></div>';
+      }
+    }
+
+    function progress(d) {
+      const pct = d.families ? Math.round(d.assisted * 100 / d.families) : 0;
+      return '<div>' + fmtNum(d.families) + (d.families === 1 ? ' family' : ' families') + ' · ' + fmtNum(d.assisted) + ' assisted</div>' +
+        '<div class="progress" title="' + pct + '% assisted"><div style="width:' + pct + '%"></div></div>';
+    }
+
+    function draw() {
+      const active = data.disasters.filter(disasterIsActive);
+      const closed = data.disasters.filter(d => !disasterIsActive(d));
+      const families = active.reduce((s, d) => s + d.families, 0);
+      const assisted = active.reduce((s, d) => s + d.assisted, 0);
+      const year = String(new Date().getFullYear());
+      const closedThisYear = closed.filter(d => (d.closedDate || d.date || '').startsWith(year)).length;
+
+      main.innerHTML =
+        pageHead(me, 'Disasters', 'Record disaster events affecting the barangay and monitor the relief needs of each one.',
+          '<div class="head-actions"><button class="btn" id="centerBtn"' + (me.canEnterRecords ? '' : ' disabled') + '>Add evacuation center</button>' +
+          '<button class="btn primary" id="addBtn">Record disaster</button></div>') +
+        '<div class="stats">' +
+          '<div class="stat"><div class="cap">Active disasters</div><div class="val">' + active.length + '</div><div class="note">' + (esc(active.map(d => d.name).slice(0, 2).join(' · ')) || 'None recorded') + '</div></div>' +
+          '<div class="stat"><div class="cap">Affected families</div><div class="val">' + fmtNum(families) + '</div><div class="note">Registered under active events</div></div>' +
+          '<div class="stat"><div class="cap">Families assisted</div><div class="val teal">' + fmtNum(assisted) + '</div><div class="note">' + (families ? Math.round(assisted * 100 / families) + '% of registered households' : 'No households yet') + '</div></div>' +
+          '<div class="stat"><div class="cap">Closed this year</div><div class="val">' + closedThisYear + '</div><div class="note">' + closed.length + ' closed in total</div></div>' +
+        '</div>' +
+        '<div class="card">' +
+          '<div class="card-head"><div><h2>Disaster events</h2><p class="sub">Select an event to view its households on the Beneficiaries screen.</p></div></div>' +
+          '<div class="subtabs">' +
+            '<button class="subtab" data-tab="active">Active (' + active.length + ')</button>' +
+            '<button class="subtab" data-tab="closed">Closed (' + closed.length + ')</button>' +
+            '<button class="subtab" data-tab="all">All events</button></div>' +
+          '<div class="filters"><input id="search" placeholder="Search disaster name, ID or affected area">' +
+            '<select id="typeFilter"><option value="">All types</option>' + data.types.map(t => '<option>' + esc(t) + '</option>').join('') + '</select>' +
+            '<select id="sevFilter"><option value="">All severity</option><option value="HIGH">High</option><option value="MODERATE">Moderate</option><option value="LOW">Low</option></select></div>' +
+          '<div class="table-wrap"><table><thead><tr><th>Disaster</th><th>Type / date</th><th>Affected areas</th><th>Severity</th><th>Families / progress</th><th>Status</th><th>Action</th></tr></thead>' +
+          '<tbody id="rows"></tbody></table><div id="pager"></div></div>' +
+          '<div class="foot">Household counts are event-specific and may include the same family in different disasters.</div>' +
+        '</div>' +
+        '<div class="card section-gap"><h2>Recently closed events</h2>' +
+          '<div class="table-wrap section-gap"><table><thead><tr><th>Disaster</th><th>Type / date</th><th>Area</th><th>Response outcome</th><th>Status</th></tr></thead><tbody>' +
+          (closed.slice(0, 5).map(d => '<tr><td>' + esc(d.name) + '<div class="sub2">' + esc(d.id) + '</div></td><td>' + esc(d.type) + ' · ' + fmtDate(d.date) +
+            '</td><td>' + esc(d.affectedAreas || '—') + '</td><td>' + fmtNum(d.assisted) + ' / ' + fmtNum(d.families) + ' households assisted</td><td>' +
+            statusPill('CLOSED') + (d.closedDate ? '<div class="sub2">' + fmtDate(d.closedDate) + '</div>' : '') + '</td></tr>').join('') ||
+            '<tr><td colspan="5" class="muted">No closed events yet.</td></tr>') +
+          '</tbody></table></div></div>' +
+        '<div class="card section-gap"><div class="card-head"><div><h2>Evacuation centers</h2><p class="sub">Used when recording where relief goods were released.</p></div></div>' +
+          '<div class="table-wrap section-gap"><table><thead><tr><th>Center</th><th>Address</th><th>Capacity</th>' + (me.role === 'ADMIN' ? '<th>Barangay</th>' : '') + '</tr></thead><tbody>' +
+          (data.centers.map(c => '<tr><td>' + esc(c.name) + '<div class="sub2">' + esc(c.id) + '</div></td><td>' + esc(c.address) + '</td><td>' + fmtNum(c.capacity) + ' people</td>' +
+            (me.role === 'ADMIN' ? '<td>' + esc(c.barangay) + '</td>' : '') + '</tr>').join('') ||
+            '<tr><td colspan="4" class="muted">No evacuation centers yet.</td></tr>') +
+          '</tbody></table></div></div>' + pageFooter();
+
+      document.querySelectorAll('.subtab').forEach(b => {
+        b.classList.toggle('active', b.dataset.tab === tab);
+        b.addEventListener('click', () => { tab = b.dataset.tab; page = 1; draw(); });
+      });
+      ['search', 'typeFilter', 'sevFilter'].forEach(id => document.getElementById(id).addEventListener('input', () => { page = 1; drawRows(); }));
+      document.getElementById('addBtn').addEventListener('click', openAdd);
+      document.getElementById('centerBtn').addEventListener('click', openCenter);
+      drawRows();
+    }
+
+    function drawRows() {
+      const q = document.getElementById('search').value.trim().toLowerCase();
+      const type = document.getElementById('typeFilter').value;
+      const sev = document.getElementById('sevFilter').value;
+      const list = data.disasters.filter(d =>
+        (tab === 'all' || (tab === 'active') === disasterIsActive(d)) &&
+        (!q || (d.name + ' ' + d.id + ' ' + (d.affectedAreas || '')).toLowerCase().includes(q)) &&
+        (!type || d.type === type) && (!sev || d.severity === sev));
+      const p = paginate(list, page, 8, n => { page = n; drawRows(); }, 'events');
+      document.getElementById('rows').innerHTML = p.rows.map(d =>
+        '<tr><td>' + esc(d.name) + '<div class="sub2">' + esc(d.id) + (me.role === 'ADMIN' ? ' · ' + esc(d.barangay) : '') + '</div></td>' +
+        '<td>' + esc(d.type) + '<div class="sub2">' + fmtDate(d.date) + '</div></td>' +
+        '<td>' + esc(d.affectedAreas || '—') + '</td>' +
+        '<td><span class="badge ' + esc(d.severity) + '">' + esc(titleCase(d.severity) || '—') + '</span></td>' +
+        '<td>' + progress(d) + '</td>' +
+        '<td>' + statusPill(disasterIsActive(d) ? 'ACTIVE' : 'CLOSED') + '</td>' +
+        '<td><div class="actions"><a class="link" href="beneficiaries.html?disaster=' + encodeURIComponent(d.id) + '">Households</a>' +
+          '<button class="link' + (disasterIsActive(d) ? ' danger' : '') + '" data-status="' + esc(d.id) + '">' + (disasterIsActive(d) ? 'Close' : 'Reopen') + '</button></div></td></tr>'
+      ).join('') || '<tr><td colspan="7" class="muted" style="text-align:center;padding:28px">No disaster events match.</td></tr>';
+      const pager = document.getElementById('pager');
+      pager.innerHTML = '';
+      pager.appendChild(p.footer);
+      document.querySelectorAll('[data-status]').forEach(b => b.addEventListener('click', () => openStatus(b.dataset.status)));
+    }
+
+    // ---- record disaster
+    function openAdd() {
+      document.getElementById('disasterForm').reset();
+      document.getElementById('dType').innerHTML = data.types.map(t => '<option>' + esc(t) + '</option>').join('');
+      document.getElementById('dDate').value = todayIso();
+      document.getElementById('disasterBarangay').innerHTML = barangayField(me, 'dBarangay');
+      showError('disasterError', '');
+      openModal('disasterModal');
+    }
+    document.getElementById('disasterForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        const result = await post('/api/disasters', {
+          barangayId: (document.getElementById('dBarangay') || {}).value || '',
+          name: document.getElementById('dName').value,
+          type: document.getElementById('dType').value,
+          date: document.getElementById('dDate').value,
+          severity: document.getElementById('dSeverity').value,
+          affectedAreas: document.getElementById('dAreas').value
+        });
+        closeModal('disasterModal');
+        tab = 'active';
+        await load();
+        flash('<div class="t">' + esc(result.id) + ' recorded</div><div class="d">You can now register affected households on the <a href="beneficiaries.html?disaster=' + encodeURIComponent(result.id) + '">Beneficiaries</a> screen.</div>');
+      } catch (e) { showError('disasterError', e.message); }
+    });
+
+    // ---- close / reopen
+    function openStatus(id) {
+      statusTarget = data.disasters.find(d => d.id === id);
+      if (!statusTarget) return;
+      const closing = disasterIsActive(statusTarget);
+      document.getElementById('statusTitle').textContent = (closing ? 'Close ' : 'Reopen ') + statusTarget.name;
+      document.getElementById('statusText').textContent = closing
+        ? statusTarget.assisted + ' of ' + statusTarget.families + ' registered households were assisted. Closing stops new household registrations and releases for this event. Records are kept.'
+        : 'Reopening allows new household registrations and releases for this event again.';
+      document.getElementById('statusSubmit').textContent = closing ? 'Close disaster' : 'Reopen disaster';
+      document.getElementById('sReason').value = '';
+      showError('statusError', '');
+      openModal('statusModal');
+    }
+    document.getElementById('statusForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        await post('/api/disasters/status', {
+          id: statusTarget.id,
+          status: disasterIsActive(statusTarget) ? 'CLOSED' : 'ACTIVE',
+          reason: document.getElementById('sReason').value
+        });
+        closeModal('statusModal');
+        await load();
+      } catch (e) { showError('statusError', e.message); }
+    });
+
+    // ---- evacuation center
+    function openCenter() {
+      document.getElementById('centerForm').reset();
+      document.getElementById('centerBarangay').innerHTML = barangayField(me, 'cBarangay');
+      showError('centerError', '');
+      openModal('centerModal');
+    }
+    document.getElementById('centerForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        await post('/api/centers', {
+          barangayId: (document.getElementById('cBarangay') || {}).value || '',
+          name: document.getElementById('cName').value,
+          address: document.getElementById('cAddress').value,
+          capacity: document.getElementById('cCapacity').value
+        });
+        closeModal('centerModal');
+        await load();
+      } catch (e) { showError('centerError', e.message); }
+    });
+
+    load();
+  })();
+</script>
+</body>
+</html>

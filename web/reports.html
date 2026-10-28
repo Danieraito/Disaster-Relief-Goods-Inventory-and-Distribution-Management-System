@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BarangayCare - Reports</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="shell"></div>
+<main class="page" id="main"></main>
+<script src="app.js"></script>
+<script>
+  (async function () {
+    const me = await startPage('Reports');
+    const main = document.getElementById('main');
+    let data = null;
+    let tab = 'inventory';
+    let report = null;
+
+    const TABS = [['inventory', 'Inventory'], ['beneficiaries', 'Disaster & beneficiaries'], ['donations', 'Donations'], ['distribution', 'Distribution'], ['request', 'Request for goods']];
+
+    try {
+      const [inv, hh, dis, don, rel] = await Promise.all([
+        api('/api/inventory'), api('/api/households'), api('/api/disasters'), api('/api/donations'), api('/api/distributions')]);
+      data = { items: inv.items, today: inv.today, households: hh.households, disasters: dis.disasters,
+        donations: don.donations, donors: don.donors, releases: rel.distributions, packs: rel.packs };
+    } catch (e) {
+      main.innerHTML = '<div class="banner danger"><div><div class="t">Could not load report data</div><div class="d">' + esc(e.message) + '</div></div></div>';
+      return;
+    }
+
+    const opts = (list, allLabel) => '<option value="">' + allLabel + '</option>' + list.map(o => Array.isArray(o)
+      ? '<option value="' + esc(o[0]) + '">' + esc(o[1]) + '</option>' : '<option>' + esc(o) + '</option>').join('');
+    const box = (label, inner, hint) => '<div class="filter-box"><label>' + label + '</label>' + inner + (hint ? '<div class="hint">' + hint + '</div>' : '') + '</div>';
+    const val = id => (document.getElementById(id) || {}).value || '';
+    const unique = list => Array.from(new Set(list.filter(Boolean))).sort();
+
+    // ------------------------------------------------------------- filter panels
+    function filtersFor(t) {
+      if (t === 'request') {
+        const active = data.disasters.filter(disasterIsActive);
+        return box('Disaster', '<select id="fDisaster">' + (active.length ? active.map(d => '<option value="' + esc(d.id) + '">' + esc(d.name) + '</option>').join('') : '<option value="">No active disaster</option>') + '</select>', 'Families still waiting are counted for this event') +
+          box('Relief pack', '<select id="fPack">' + opts(data.packs.map(p => [p.id, p.name]), 'No pack (low stock only)') + '</select>', 'Goods needed to give this pack to every waiting family') +
+          box('Addressed to', '<select id="fTo"><option>City Social Welfare and Development Office</option><option>Municipal Social Welfare and Development Office</option><option>DSWD Field Office</option></select>');
+      }
+      const disasterOpts = opts(data.disasters.map(d => [d.id, d.name + (disasterIsActive(d) ? '' : ' (closed)')]), 'All disasters');
+      if (t === 'inventory') {
+        return box('Report type', '<select id="fType"><option value="current">Current stock</option><option value="low">Low stock</option><option value="expiring">Expiring within 30 days</option><option value="expired">Expired items</option></select>', 'Current stock · Low stock · Expired items') +
+          box('Item / category', '<select id="fCategory">' + opts(unique(data.items.map(i => i.category)), 'All items &amp; categories') + '</select>') +
+          box('Storage location', '<select id="fStorage">' + opts(unique(data.items.map(i => i.storage)), 'All locations') + '</select>');
+      }
+      if (t === 'beneficiaries') {
+        return box('Report type', '<select id="fType"><option value="households">Families &amp; members</option><option value="vulnerable">Vulnerable groups</option><option value="needs">Assistance needed (pending)</option><option value="disasters">Disaster summary</option></select>', 'Families, vulnerable groups, assistance needed') +
+          box('Disaster', '<select id="fDisaster">' + disasterOpts + '</select>', 'For beneficiary and distribution reports') +
+          box('House damage', '<select id="fDamage">' + opts(['Not damaged', 'Partially damaged', 'Totally damaged'], 'All damage levels') + '</select>');
+      }
+      if (t === 'donations') {
+        return box('Report type', '<select id="fType"><option value="list">Donations by date</option><option value="donor">Totals by donor</option><option value="item">Totals by item</option></select>', 'Donations by donor / period / item') +
+          box('Period from', '<input type="date" id="fFrom">', 'Leave blank for all dates') +
+          box('Period to', '<input type="date" id="fTo">') +
+          box('Donor', '<select id="fDonor">' + opts(data.donors.map(d => [d.id, d.name]), 'All donors') + '</select>', 'For donation reports by donor') +
+          box('Item', '<select id="fItem">' + opts(unique(data.donations.flatMap(d => d.items.map(i => i.name))), 'All items') + '</select>') +
+          box('Status', '<select id="fStatus"><option value="APPROVED">Posted only</option><option value="">All statuses</option></select>');
+      }
+      return box('Report type', '<select id="fType"><option value="list">Releases by date</option><option value="item">Totals by item</option><option value="household">By household</option></select>', 'Distributions by disaster / item / beneficiary') +
+        box('Disaster', '<select id="fDisaster">' + disasterOpts + '</select>') +
+        box('Period from', '<input type="date" id="fFrom">', 'Leave blank for all dates') +
+        box('Period to', '<input type="date" id="fTo">') +
+        box('Item', '<select id="fItem">' + opts(unique(data.releases.flatMap(r => r.items.map(i => i.name))), 'All items') + '</select>') +
+        box('Beneficiary', '<select id="fHousehold">' + opts(unique(data.releases.map(r => r.householdId)).map(id => [id, id + ' · ' + (data.releases.find(r => r.householdId === id) || {}).household]), 'All households') + '</select>', 'For distribution reports by household');
+    }
+
+    const count = (n, one, many) => fmtNum(n) + ' ' + (n === 1 ? one : (many || one + 's'));
+    const inPeriod = (date, from, to) => (!from || date >= from) && (!to || date <= to);
+    const stat = (cap, value, note, cls) => ({ cap: cap, value: value, note: note, cls: cls || '' });
+
+    // ------------------------------------------------------------- report builders
+    // Each returns: title, columns, rows (display HTML), csv (plain values), stats, note.
+    // Request for augmentation: what the barangay asks the social welfare office to send.
+    // Suggested quantity = the larger of (threshold − usable) and (pack quantity × waiting families − usable).
+    function buildRequest() {
+      const disaster = data.disasters.find(d => d.id === val('fDisaster'));
+      const pack = data.packs.find(p => p.id === val('fPack'));
+      const to = val('fTo');
+      const barangayId = disaster ? disaster.barangayId : (pack ? pack.barangayId : me.barangayId);
+      const barangayName = disaster ? disaster.barangay : me.workspace;
+      const hh = disaster ? data.households.filter(h => h.disasterId === disaster.id) : [];
+      const round = disaster ? Math.max(1, ...data.releases.filter(r => r.disasterId === disaster.id && r.status !== 'REJECTED').map(r => r.round || 1)) : 1;
+      const waiting = hh.filter(h => !String(h.rounds || '').split(',').map(Number).includes(round));
+      const seniors = waiting.reduce((s, h) => s + h.seniors, 0), pwd = waiting.reduce((s, h) => s + h.pwd, 0);
+      const infants = waiting.reduce((s, h) => s + h.infants, 0), pregnant = waiting.reduce((s, h) => s + h.pregnant, 0);
+      const rows = data.items.filter(i => !barangayId || i.barangayId === barangayId).map(i => {
+        const line = pack ? pack.lines.find(l => l.itemId === i.id) : null;
+        const forFamilies = line ? line.quantity * waiting.length : 0;
+        const buffer = Math.max(i.threshold - i.available, 0);
+        const shortForFamilies = Math.max(forFamilies - i.available, 0);
+        const request = Math.max(buffer, shortForFamilies);
+        const basis = request === 0 ? '' : shortForFamilies >= buffer ? 'Cover ' + waiting.length + ' waiting families × ' + line.quantity + ' ' + i.unit : 'Restore low-stock buffer';
+        return { item: i, forFamilies: forFamilies, request: request, basis: basis };
+      }).filter(r => r.request > 0).sort((a, b) => b.request - a.request);
+      const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+      const letter = disaster ?
+        '<div class="card" style="margin-bottom:16px;line-height:1.6"><p style="text-align:right">' + esc(today) + '</p>' +
+        '<p><b>To:</b> The Head, ' + esc(to) + '<br><b>From:</b> The Punong Barangay, ' + esc(barangayName) + '<br><b>Subject:</b> Request for augmentation of relief goods · ' + esc(disaster.name) + '</p>' +
+        '<p class="section-gap">' + esc(barangayName) + ' has registered <b>' + count(hh.length, 'affected household') + '</b> (' + count(hh.reduce((s, h) => s + h.members, 0), 'individual') + ') for ' + esc(disaster.name) +
+        '. In relief round ' + round + ', <b>' + count(waiting.length, 'household') + '</b> ' + (waiting.length === 1 ? 'has' : 'have') + ' not yet received assistance, including ' +
+        count(seniors, 'senior citizen') + ', ' + count(pwd, 'person', 'persons') + ' with disability, ' + count(pregnant, 'pregnant or lactating woman', 'pregnant or lactating women') + ' and ' + count(infants, 'infant') +
+        '. Our current stock is not enough for these families, so we respectfully request the goods listed below.</p>' +
+        '<div class="sign" style="margin-top:36px"><div>Prepared by: ' + esc(me.name) + '</div><div>Punong Barangay</div></div></div>' : '';
+      return {
+        title: 'Request for augmentation of relief goods',
+        letter: letter,
+        columns: ['Item', 'Usable stock', 'Threshold', 'Needed for waiting families', 'Requested quantity', 'Basis'],
+        rows: rows.map(r => [esc(r.item.name) + '<div class="sub2">' + esc(r.item.category || '') + '</div>', fmtNum(r.item.available) + ' ' + esc(r.item.unit), fmtNum(r.item.threshold),
+          r.forFamilies ? fmtNum(r.forFamilies) + ' ' + esc(r.item.unit) : '—', '<b>' + fmtNum(r.request) + ' ' + esc(r.item.unit) + '</b>', esc(r.basis)]),
+        csv: [['Item', 'Usable stock', 'Unit', 'Threshold', 'Needed for waiting families', 'Requested quantity', 'Basis']]
+          .concat(rows.map(r => [r.item.name, r.item.available, r.item.unit, r.item.threshold, r.forFamilies, r.request, r.basis])),
+        stats: [stat('Households waiting', fmtNum(waiting.length), disaster ? 'Round ' + round + ' · ' + esc(disaster.name) : 'Choose an active disaster', 'warn'),
+          stat('Vulnerable members waiting', fmtNum(seniors + pwd + infants + pregnant), seniors + ' senior · ' + pwd + ' PWD · ' + pregnant + ' pregnant · ' + infants + ' infants'),
+          stat('Items to request', rows.length, 'Below threshold or short for waiting families'),
+          stat('Pack coverage now', pack ? fmtNum(pack.familiesCovered) : '—', pack ? esc(pack.name) + ' · families the stock can cover' : 'Choose a relief pack')],
+        note: 'Requested quantity = the larger of (threshold − usable stock) and (pack quantity × waiting families − usable stock).'
+      };
+    }
+
+    function buildInventory() {
+      const type = val('fType'), cat = val('fCategory'), storage = val('fStorage');
+      let list = data.items.filter(i => (!cat || i.category === cat) && (!storage || i.storage === storage));
+      if (type === 'low') list = list.filter(i => i.low);
+      if (type === 'expiring') list = list.filter(i => i.expiringQuantity > 0);
+      if (type === 'expired') list = list.filter(i => i.expiredQuantity > 0);
+      const recorded = list.reduce((s, i) => s + i.total, 0), usable = list.reduce((s, i) => s + i.available, 0);
+      const expired = list.reduce((s, i) => s + i.expiredQuantity, 0);
+      return {
+        title: { current: 'Current stock report', low: 'Low stock report', expiring: 'Expiring stock report', expired: 'Expired items report' }[type],
+        columns: ['Item', 'Recorded', 'Available', 'Threshold', 'Earliest expiry', 'Storage', 'Status'],
+        rows: list.map(i => [esc(i.name) + '<div class="sub2">' + esc(i.category || '') + ' · ' + esc(i.id) + '</div>', fmtNum(i.total) + ' ' + esc(i.unit),
+          fmtNum(i.available) + ' ' + esc(i.unit), fmtNum(i.threshold), fmtDate(i.earliestExpiry), esc(i.storage || '—'), '<span class="st st-' + i.status + '">' + esc(i.statusText) + '</span>']),
+        csv: [['Item ID', 'Item', 'Category', 'Recorded', 'Available', 'Unit', 'Threshold', 'Earliest expiry', 'Storage', 'Status']]
+          .concat(list.map(i => [i.id, i.name, i.category, i.total, i.available, i.unit, i.threshold, i.earliestExpiry || 'Not applicable', i.storage, i.statusText])),
+        stats: [stat('Recorded stock', fmtNum(recorded), 'Mixed units · ' + list.length + ' records'),
+          stat('Usable stock', fmtNum(usable), fmtNum(expired) + ' expired units excluded'),
+          stat('Low-stock items', list.filter(i => i.low).length, 'At or below threshold', 'warn'),
+          stat('Expired stock', fmtNum(expired), expired ? 'Quarantine · do not release' : 'None', expired ? 'danger' : '')],
+        note: 'Mixed units are administrative counts, not equivalent relief quantities.'
+      };
+    }
+
+    function buildBeneficiaries() {
+      const type = val('fType'), dis = val('fDisaster'), damage = val('fDamage');
+      if (type === 'disasters') {
+        const list = data.disasters.filter(d => !dis || d.id === dis);
+        return {
+          title: 'Disaster response summary',
+          columns: ['Disaster', 'Type / date', 'Affected areas', 'Severity', 'Families', 'Individuals', 'Assisted', 'Status'],
+          rows: list.map(d => [esc(d.name) + '<div class="sub2">' + esc(d.id) + '</div>', esc(d.type) + '<div class="sub2">' + fmtDate(d.date) + '</div>', esc(d.affectedAreas || ''),
+            esc(titleCase(d.severity)), fmtNum(d.families), fmtNum(d.individuals), fmtNum(d.assisted) + (d.families ? ' (' + Math.round(d.assisted * 100 / d.families) + '%)' : ''), statusPill(disasterIsActive(d) ? 'ACTIVE' : 'CLOSED')]),
+          csv: [['Disaster ID', 'Name', 'Type', 'Date', 'Affected areas', 'Severity', 'Families', 'Individuals', 'Assisted', 'Status']]
+            .concat(list.map(d => [d.id, d.name, d.type, d.date, d.affectedAreas, d.severity, d.families, d.individuals, d.assisted, disasterIsActive(d) ? 'Active' : 'Closed'])),
+          stats: [stat('Disasters', list.length, list.filter(disasterIsActive).length + ' active'),
+            stat('Families', fmtNum(list.reduce((s, d) => s + d.families, 0)), 'Registered households'),
+            stat('Individuals', fmtNum(list.reduce((s, d) => s + d.individuals, 0)), 'From member records'),
+            stat('Assisted', fmtNum(list.reduce((s, d) => s + d.assisted, 0)), 'Households with a confirmed release', 'teal')],
+          note: 'Household counts are event-specific and may include the same family in different disasters.'
+        };
+      }
+      let list = data.households.filter(h => (!dis || h.disasterId === dis) && (!damage || h.damage === damage));
+      if (type === 'vulnerable') list = list.filter(h => h.seniors + h.infants + h.pwd > 0);
+      if (type === 'needs') list = list.filter(h => !h.assistedBy);
+      const seniors = list.reduce((s, h) => s + h.seniors, 0), pwd = list.reduce((s, h) => s + h.pwd, 0), infants = list.reduce((s, h) => s + h.infants, 0);
+      return {
+        title: { households: 'Families & members report', vulnerable: 'Vulnerable groups report', needs: 'Assistance needed report' }[type],
+        columns: ['Household / head', 'Disaster', 'Address', 'Members', 'Senior / PWD / infant', 'Damage / evacuation', 'Needs', 'Status'],
+        rows: list.map(h => [esc(h.id) + '<div class="sub2">' + esc(h.head) + '</div>', esc(h.disaster), esc(h.address), h.members, h.seniors + ' / ' + h.pwd + ' / ' + h.infants,
+          esc(h.damage || '—') + '<div class="sub2">' + esc(h.evacuation || '') + '</div>', esc(h.needs || '—'), h.assistedBy ? '<span class="pill-st ok">Assisted</span>' : '<span class="pill-st warn">Pending</span>']),
+        csv: [['Household ID', 'Head', 'Disaster', 'Address', 'Members', 'Seniors', 'PWD', 'Infants', 'Damage', 'Evacuation', 'Needs', 'Status', 'Release']]
+          .concat(list.map(h => [h.id, h.head, h.disaster, h.address, h.members, h.seniors, h.pwd, h.infants, h.damage, h.evacuation, h.needs, h.assistedBy ? 'Assisted' : 'Pending', h.assistedBy || ''])),
+        stats: [stat('Families', fmtNum(list.length), 'Households in this report'),
+          stat('Individuals', fmtNum(list.reduce((s, h) => s + h.members, 0)), 'From member records'),
+          stat('Vulnerable individuals', fmtNum(seniors + pwd + infants), seniors + ' senior · ' + pwd + ' PWD · ' + infants + ' infants'),
+          stat('Pending assistance', fmtNum(list.filter(h => !h.assistedBy).length), list.filter(h => h.assistedBy).length + ' assisted', 'warn')],
+        note: 'Senior, PWD and infant counts come from verified member categories, not from age.'
+      };
+    }
+
+    function totalsBy(lines, keyOf) {
+      const map = new Map();
+      lines.forEach(l => {
+        const key = keyOf(l);
+        const entry = map.get(key) || { key: key, unit: l.unit, quantity: 0, count: 0 };
+        entry.quantity += l.quantity;
+        entry.count += 1;
+        map.set(key, entry);
+      });
+      return Array.from(map.values()).sort((a, b) => b.quantity - a.quantity);
+    }
+
+    function buildDonations() {
+      const type = val('fType'), from = val('fFrom'), to = val('fTo'), donor = val('fDonor'), item = val('fItem'), status = val('fStatus');
+      const list = data.donations.filter(d => (!status || d.status === status) && inPeriod(d.date, from, to) && (!donor || d.donorId === donor) && (!item || d.items.some(i => i.name === item)));
+      const lines = list.flatMap(d => d.items.filter(i => !item || i.name === item).map(i => Object.assign({ donation: d }, i)));
+      const units = lines.reduce((s, l) => s + l.quantity, 0);
+      const stats = [stat('Donations', list.length, (from || to ? 'In the selected period' : 'All dates')),
+        stat('Donors', new Set(list.map(d => d.donorId)).size, 'Individuals, organizations &amp; agencies'),
+        stat('Units received', fmtNum(units), 'Mixed units', 'teal'),
+        stat('Item lines', lines.length, new Set(lines.map(l => l.name)).size + ' different items')];
+      if (type === 'donor') {
+        const totals = new Map();
+        list.forEach(d => { const t = totals.get(d.donorId) || { name: d.donor, type: d.donorType, count: 0, units: 0 }; t.count++; t.units += d.items.reduce((s, i) => s + i.quantity, 0); totals.set(d.donorId, t); });
+        const rows = Array.from(totals.values()).sort((a, b) => b.units - a.units);
+        return { title: 'Donations by donor', columns: ['Donor', 'Type', 'Donations', 'Units received'], stats: stats,
+          rows: rows.map(t => [esc(t.name), esc(titleCase(t.type)), t.count, fmtNum(t.units)]),
+          csv: [['Donor', 'Type', 'Donations', 'Units received']].concat(rows.map(t => [t.name, t.type, t.count, t.units])), note: 'Units are mixed and counted as recorded.' };
+      }
+      if (type === 'item') {
+        const rows = totalsBy(lines, l => l.name);
+        return { title: 'Donations by item', columns: ['Item', 'Quantity received', 'Donation lines'], stats: stats,
+          rows: rows.map(t => [esc(t.key), fmtNum(t.quantity) + ' ' + esc(t.unit), t.count]),
+          csv: [['Item', 'Quantity', 'Unit', 'Lines']].concat(rows.map(t => [t.key, t.quantity, t.unit, t.count])), note: '' };
+      }
+      return { title: 'Donations by date', columns: ['Reference', 'Date', 'Donor', 'Items', 'Status', 'Received by'], stats: stats,
+        rows: list.map(d => [esc(d.id), fmtDate(d.date), esc(d.donor), linesText(d.items), statusPill(d.status), esc(d.receivedBy || '—')]),
+        csv: [['Donation ID', 'Date', 'Donor', 'Item', 'Quantity', 'Unit', 'Status', 'Received by']].concat(lines.map(l => [l.donation.id, l.donation.date, l.donation.donor, l.name, l.quantity, l.unit, l.donation.status, l.donation.receivedBy || ''])),
+        note: 'Only posted donations change stock.' };
+    }
+
+    function buildDistribution() {
+      const type = val('fType'), dis = val('fDisaster'), from = val('fFrom'), to = val('fTo'), item = val('fItem'), hh = val('fHousehold');
+      const list = data.releases.filter(r => r.status === 'APPROVED' && (!dis || r.disasterId === dis) && inPeriod(r.date, from, to) &&
+        (!hh || r.householdId === hh) && (!item || r.items.some(i => i.name === item)));
+      const lines = list.flatMap(r => r.items.filter(i => !item || i.name === item).map(i => Object.assign({ release: r }, i)));
+      const stats = [stat('Confirmed releases', list.length, (from || to ? 'In the selected period' : 'All dates')),
+        stat('Households assisted', new Set(list.map(r => r.householdId)).size, dis ? 'For the selected disaster' : 'Across disasters', 'teal'),
+        stat('Units released', fmtNum(lines.reduce((s, l) => s + l.quantity, 0)), 'Mixed units'),
+        stat('Item lines', lines.length, new Set(lines.map(l => l.name)).size + ' different items')];
+      if (type === 'item') {
+        const rows = totalsBy(lines, l => l.name);
+        return { title: 'Distributions by item', columns: ['Item', 'Quantity released', 'Release lines'], stats: stats,
+          rows: rows.map(t => [esc(t.key), fmtNum(t.quantity) + ' ' + esc(t.unit), t.count]),
+          csv: [['Item', 'Quantity', 'Unit', 'Lines']].concat(rows.map(t => [t.key, t.quantity, t.unit, t.count])), note: '' };
+      }
+      if (type === 'household') {
+        const map = new Map();
+        list.forEach(r => { const t = map.get(r.householdId) || { id: r.householdId, name: r.household, releases: [], units: 0 }; t.releases.push(r.id); t.units += r.items.reduce((s, i) => s + i.quantity, 0); map.set(r.householdId, t); });
+        const rows = Array.from(map.values());
+        return { title: 'Distributions by household', columns: ['Household', 'Head', 'Releases', 'Units received'], stats: stats,
+          rows: rows.map(t => [esc(t.id), esc(t.name), esc(t.releases.join(', ')), fmtNum(t.units)]),
+          csv: [['Household ID', 'Head', 'Releases', 'Units']].concat(rows.map(t => [t.id, t.name, t.releases.join(' '), t.units])), note: '' };
+      }
+      return { title: 'Releases by date', columns: ['Release', 'Date', 'Disaster', 'Household', 'Center / location', 'Items', 'Released by'], stats: stats,
+        rows: list.map(r => [esc(r.id), fmtDate(r.date), esc(r.disaster), esc(r.household) + '<div class="sub2">' + esc(r.householdId) + '</div>', esc(r.center || r.releaseLocation || '—'), linesText(r.items), esc(r.releasedBy || '—')]),
+        csv: [['Release ID', 'Date', 'Disaster', 'Household ID', 'Head', 'Center / location', 'Item', 'Batch', 'Quantity', 'Unit', 'Released by']]
+          .concat(lines.map(l => [l.release.id, l.release.date, l.release.disaster, l.release.householdId, l.release.household, l.release.center || l.release.releaseLocation || '', l.name, l.batchId, l.quantity, l.unit, l.release.releasedBy || ''])),
+        note: 'Only confirmed releases are included.' };
+    }
+
+    function filterSummary() {
+      return Array.from(document.querySelectorAll('.filter-box')).map(b => {
+        const input = b.querySelector('select, input');
+        const text = input.tagName === 'SELECT' ? input.options[input.selectedIndex].text : (input.value || 'any');
+        return b.querySelector('label').textContent + ': ' + text;
+      }).join(' · ');
+    }
+
+    // ------------------------------------------------------------- page
+    function draw() {
+      main.innerHTML =
+        pageHead(me, 'Reports', 'One reporting workspace for stock, donations, household needs and releases.',
+          me.canExportReports ? '<div class="head-actions"><button class="btn" id="csvBtn">Export Excel (CSV)</button><button class="btn primary" id="pdfBtn">Export PDF</button></div>' : '') +
+        '<div class="print-only"><h2>BarangayCare · ' + esc(me.workspace) + '</h2></div>' +
+        '<div class="subtabs">' + TABS.map(t => '<button class="subtab' + (t[0] === tab ? ' active' : '') + '" data-tab="' + t[0] + '">' + t[1] + '</button>').join('') + '</div>' +
+        '<div class="card no-print"><h2>Report filters</h2><p class="sub">Exports include the selected filters, generation time and generating officer.</p>' +
+          '<div class="filter-grid">' + filtersFor(tab) + '</div>' +
+          '<div class="card-head section-gap" style="align-items:center"><p class="muted" style="font-size:12px">' +
+            (!me.canExportReports ? 'Your role can view reports. Ask a Barangay Official to export them.' : tab === 'request' ? 'Use Export PDF to print the letter for signing.' : 'Additional report options are in the Report type list.') + '</p>' +
+          '<button class="btn primary" id="genBtn">Generate report</button></div></div>' +
+        '<div id="output" class="section-gap"></div>' + pageFooter();
+      document.querySelectorAll('.subtab').forEach(b => b.addEventListener('click', () => { tab = b.dataset.tab; draw(); }));
+      document.getElementById('genBtn').addEventListener('click', generate);
+      if (me.canExportReports) {
+        document.getElementById('csvBtn').addEventListener('click', exportCsv);
+        document.getElementById('pdfBtn').addEventListener('click', exportPdf);
+      }
+      generate();
+    }
+
+    function generate() {
+      report = ({ inventory: buildInventory, beneficiaries: buildBeneficiaries, donations: buildDonations, distribution: buildDistribution, request: buildRequest })[tab]();
+      report.generatedAt = new Date();
+      report.filters = filterSummary();
+      document.getElementById('output').innerHTML =
+        '<div class="stats">' + report.stats.map(s => '<div class="stat"><div class="cap">' + s.cap + '</div><div class="val ' + s.cls + '">' + s.value + '</div><div class="note">' + s.note + '</div></div>').join('') + '</div>' +
+        (report.letter || '') +
+        '<div class="card"><h2>' + esc(report.title) + '</h2>' +
+          '<p class="report-meta">Generated by ' + esc(me.name) + ' · ' + fmtDateTime(report.generatedAt) + '</p>' +
+          '<p class="report-meta print-only">' + esc(report.filters) + '</p>' +
+          '<div class="table-wrap section-gap"><table><thead><tr>' + report.columns.map(c => '<th>' + esc(c) + '</th>').join('') + '</tr></thead><tbody>' +
+          (report.rows.map(r => '<tr>' + r.map(c => '<td>' + c + '</td>').join('') + '</tr>').join('') ||
+            '<tr><td colspan="' + report.columns.length + '" class="muted" style="text-align:center;padding:28px">No records match these filters.</td></tr>') +
+          '</tbody></table><div class="pager">' + report.rows.length + ' records' + (report.note ? ' · ' + esc(report.note) : '') + '</div></div></div>';
+    }
+
+    function fileName(ext) {
+      return report.title.replace(/[^A-Za-z0-9]+/g, '-').replace(/-$/, '') + '_' + todayIso() + '.' + ext;
+    }
+    function exportCsv() {
+      const header = [['BarangayCare', me.workspace], ['Report', report.title], ['Generated by', me.name], ['Generated at', report.generatedAt.toLocaleString()], ['Filters', report.filters], []];
+      downloadCsv(fileName('csv'), header.concat(report.csv));
+      post('/api/reports/exported', { report: report.title, format: 'Excel (CSV)', filters: report.filters }).catch(() => {});
+      flash('<div class="t">Excel export ready · ' + esc(fileName('csv')) + '</div><div class="d">' + report.rows.length + ' records exported with the selected filters, generation time and your name.</div>');
+    }
+    function exportPdf() {
+      post('/api/reports/exported', { report: report.title, format: 'PDF', filters: report.filters }).catch(() => {});
+      // The browser's print window can save as PDF. The print layout hides menus and filters.
+      window.print();
+    }
+
+    draw();
+  })();
+</script>
+</body>
+</html>

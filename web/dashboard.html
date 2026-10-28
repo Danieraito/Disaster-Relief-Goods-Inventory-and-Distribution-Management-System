@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BarangayCare - Dashboard</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="shell"></div>
+<main class="page" id="main"></main>
+<script src="app.js"></script>
+<script>
+  (async function () {
+    const me = await startPage('Dashboard');
+    const main = document.getElementById('main');
+    let items = [], disasters = [], donations = [], releases = [];
+    try {
+      const [inv, dis, don, rel] = await Promise.all([api('/api/inventory'), api('/api/disasters'), api('/api/donations'), api('/api/distributions')]);
+      items = inv.items;
+      disasters = dis.disasters;
+      donations = don.donations;
+      releases = rel.distributions;
+    } catch (e) {
+      main.innerHTML = '<div class="banner danger"><div><div class="t">Could not load data</div><div class="d">' + esc(e.message) + '</div></div></div>';
+      return;
+    }
+
+    const units = items.reduce((sum, i) => sum + i.available, 0);
+    const low = items.filter(i => i.low).length;
+    const expiring = items.filter(i => i.expiringQuantity > 0).length;
+    const expired = items.filter(i => i.expiredQuantity > 0).length;
+    const attention = low + expiring + expired;
+    const needs = items.filter(i => i.status !== 'available');
+    const firstName = me.name.trim().split(/\s+/)[0];
+    const active = disasters.filter(disasterIsActive);
+    const main1 = active[0];
+    const pending = donations.filter(d => d.status === 'PENDING').length + releases.filter(r => r.status === 'PENDING').length;
+
+    let banner;
+    if (attention > 0) {
+      const names = needs.slice(0, 3).map(i => esc(i.name) + ' (' + esc(i.statusText.toLowerCase()) + ')').join(', ');
+      banner = '<div class="banner warn"><div><div class="t">' + greeting() + ', ' + esc(firstName) + '. ' +
+        attention + ' stock alert' + (attention === 1 ? '' : 's') + ' need attention.</div>' +
+        '<div class="d">' + names + '.</div></div>' +
+        '<a class="btn" href="inventory.html">Review alerts</a></div>';
+    } else {
+      banner = '<div class="banner ok"><div class="t">' + greeting() + ', ' + esc(firstName) +
+        '. All recorded stock is within safe levels.</div></div>';
+    }
+    if (pending > 0) {
+      banner += '<div class="banner info"><div><div class="t">' + pending + ' transaction' + (pending === 1 ? '' : 's') + ' awaiting approval</div>' +
+        '<div class="d">Stock changes only after a Barangay Official approves them.</div></div>' +
+        '<div class="head-actions"><a class="btn" href="donations.html">Donations</a><a class="btn" href="distribution.html">Distribution</a></div></div>';
+    }
+
+    const alertCards = needs.slice(0, 4).map(i => {
+      const isExpired = i.expiredQuantity > 0;
+      let detail;
+      if (isExpired) detail = fmtNum(i.expiredQuantity) + ' ' + esc(i.unit) + ' expired and unavailable for release.';
+      else if (i.low) detail = 'Threshold: ' + fmtNum(i.threshold) + ' ' + esc(i.unit) + '. Request replenishment before the next release.';
+      else detail = fmtNum(i.expiringQuantity) + ' ' + esc(i.unit) + ' expire by ' + fmtDate(i.earliestExpiry) + '.';
+      return '<div class="alert-item ' + (isExpired ? 'danger' : 'warn') + '"><div class="t">' + esc(i.name) +
+        ' &middot; ' + fmtNum(i.available) + ' ' + esc(i.unit) + ' available</div><div class="d">' + detail + '</div></div>';
+    }).join('') || '<p class="empty">No stock alerts right now.</p>';
+
+    let response;
+    if (main1) {
+      const pct = main1.families ? Math.round(main1.assisted * 100 / main1.families) : 0;
+      response = '<div class="card"><div class="card-head"><div><h2>Active response</h2><p class="sub">' + esc(main1.name) + ' &middot; ' + esc(main1.id) + '</p></div>' +
+        '<span class="badge ' + esc(main1.severity) + '">' + esc(titleCase(main1.severity)) + ' severity</span></div>' +
+        '<p class="muted section-gap" style="font-size:13px">' + fmtDate(main1.date) + ' &middot; ' + esc(main1.affectedAreas || '') + ' &middot; ' + fmtNum(main1.individuals) + ' affected individuals</p>' +
+        '<div class="kv"><b>Households assisted</b><span class="muted">' + fmtNum(main1.assisted) + ' / ' + fmtNum(main1.families) + '</span></div>' +
+        '<div class="progress"><div style="width:' + pct + '%"></div></div>' +
+        '<div class="kv"><b>Households pending</b><span class="muted">' + fmtNum(main1.families - main1.assisted) + '</span></div>' +
+        '<div class="head-actions section-gap"><a class="btn" href="beneficiaries.html?disaster=' + encodeURIComponent(main1.id) + '">View households</a>' +
+        '<a class="btn" href="distribution.html?disaster=' + encodeURIComponent(main1.id) + '">Releases</a></div></div>';
+    } else {
+      response = '<div class="card"><h2>Active response</h2><p class="empty">No active disaster is recorded. Record one on the <a href="disasters.html">Disasters</a> screen when an event affects the barangay.</p></div>';
+    }
+
+    // Latest donations and releases together, newest first.
+    const recent = donations.map(d => ({ when: d.recordedAt || d.date, id: d.id, kind: 'Donation', who: d.donor, items: d.items, status: d.status, by: d.receivedBy || d.recordedBy }))
+      .concat(releases.map(r => ({ when: r.recordedAt || r.date, id: r.id, kind: 'Distribution', who: r.household, items: r.items, status: r.status, by: r.releasedBy || r.recordedBy })))
+      .sort((a, b) => String(b.when).localeCompare(String(a.when))).slice(0, 6);
+
+    main.innerHTML =
+      pageHead(me, 'Response dashboard', "Your barangay's relief operations, at a glance.",
+        '<a class="btn primary" href="distribution.html">New distribution</a>')
+        .replace('/ Response dashboard', '/ Dashboard') +
+      banner +
+      '<div class="stats">' +
+        '<div class="stat"><div class="cap">Total stock</div><div class="val">' + fmtNum(units) + '</div><div class="note">Usable units &middot; ' + items.length + ' item records</div></div>' +
+        '<div class="stat"><div class="cap">Active disasters</div><div class="val">' + active.length + '</div><div class="note">' + (esc(active.slice(0, 2).map(d => d.name).join(' · ')) || 'None recorded') + '</div></div>' +
+        '<div class="stat"><div class="cap">Families served</div><div class="val teal">' + (main1 ? fmtNum(main1.assisted) + ' / ' + fmtNum(main1.families) : '&mdash;') + '</div><div class="note">' +
+          (main1 ? esc(main1.name) + ' &middot; ' + (main1.families ? Math.round(main1.assisted * 100 / main1.families) : 0) + '% assisted' : 'No active disaster') + '</div></div>' +
+        '<div class="stat"><div class="cap">Attention required</div><div class="val warn">' + attention + '</div><div class="note">' + low + ' low stock &middot; ' + expiring + ' expiring &middot; ' + expired + ' expired</div></div>' +
+      '</div>' +
+      '<div class="two">' + response +
+        '<div class="card"><h2>Stock &amp; expiry alerts</h2><p class="sub">Prioritize replenishment and safe stock handling.</p>' + alertCards + '</div>' +
+      '</div>' +
+      '<div class="card"><div class="card-head"><div><h2>Recent transactions</h2><p class="sub">Latest donation and distribution activity.</p></div>' +
+        '<a class="btn" href="audit.html">View audit logs</a></div>' +
+        (recent.length ? '<div class="table-wrap section-gap"><table><thead><tr><th>Reference</th><th>Type</th><th>Donor / household</th><th>Items</th><th>Officer</th><th>Status</th></tr></thead><tbody>' +
+          recent.map(t => '<tr><td>' + esc(t.id) + '<div class="sub2">' + fmtDateTime(t.when) + '</div></td><td>' + t.kind + '</td><td>' + esc(t.who) + '</td><td>' + linesText(t.items) +
+            '</td><td>' + esc(t.by || '—') + '</td><td>' + (t.status === 'APPROVED' ? '<span class="pill-st ok">' + (t.kind === 'Donation' ? 'Posted' : 'Confirmed') + '</span>' : statusPill(t.status)) + '</td></tr>').join('') +
+          '</tbody></table></div>' : '<p class="empty">No transactions recorded yet.</p>') + '</div>' + pageFooter();
+  })();
+</script>
+</body>
+</html>

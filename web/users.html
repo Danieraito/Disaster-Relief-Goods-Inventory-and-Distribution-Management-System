@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BarangayCare - User Administration</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="shell"></div>
+<main class="page" id="main"></main>
+
+<!-- Edit role -->
+<div class="backdrop" id="roleModal">
+  <form class="modal" id="roleForm">
+    <h2 id="roleTitle">Edit role</h2>
+    <div class="form-error" id="roleError"></div>
+    <div class="field"><label for="eRole">Role</label><select id="eRole"><option value="ADMIN">Admin</option><option value="BARANGAY_OFFICIAL">Barangay Official</option><option value="ENCODER">Encoder</option></select></div>
+    <div class="field" id="eBarangayWrap"><label for="eBarangay">Barangay workspace</label><select id="eBarangay"></select></div>
+    <p class="muted" style="font-size:12px">The change applies on the person's next click. Their password and history stay the same.</p>
+    <div class="modal-actions">
+      <button type="button" class="btn" data-close="roleModal">Cancel</button>
+      <button type="submit" class="btn primary">Save role</button>
+    </div>
+  </form>
+</div>
+
+<!-- Deactivate / reactivate -->
+<div class="backdrop" id="statusModal">
+  <form class="modal" id="statusForm">
+    <h2 id="statusTitle">Deactivate account</h2>
+    <div class="form-error" id="statusError"></div>
+    <div class="banner warn" id="statusNote"></div>
+    <div class="field"><label for="sReason">Reason for access change *</label><textarea id="sReason" placeholder="e.g. End of temporary encoding assignment." required></textarea></div>
+    <p class="muted" style="font-size:12px">Keep at least one active Admin. Changes to roles and account status are logged with the acting Admin's name and timestamp.</p>
+    <div class="modal-actions">
+      <button type="button" class="btn" data-close="statusModal">Cancel</button>
+      <button type="submit" class="btn primary" id="statusSubmit">Deactivate</button>
+    </div>
+  </form>
+</div>
+
+<!-- Temporary password -->
+<div class="backdrop" id="passModal">
+  <div class="modal">
+    <h2 id="passTitle">Temporary password</h2>
+    <p id="passText"></p>
+    <div class="temp-pass" id="passValue"></div>
+    <p class="muted" style="font-size:12px">This is shown only once. Give it to the person privately; it is stored only as a secure hash.</p>
+    <div class="modal-actions"><button class="btn primary" data-close="passModal">Done</button></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+  (async function () {
+    const me = await startPage('User Administration');
+    const main = document.getElementById('main');
+    if (!me.canManageUsers) {
+      main.innerHTML = pageHead(me, 'User accounts & roles', '', '') +
+        '<div class="banner danger"><div><div class="t">Admins only</div><div class="d">User administration is visible only to Admin accounts.</div></div></div>';
+      return;
+    }
+    let users = [], barangays = [];
+    let target = null;
+    document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => closeModal(b.dataset.close)));
+
+    const PERMISSIONS = [
+      ['View dashboard &amp; module records', 'Allowed', 'Allowed', 'Allowed'],
+      ['Register households / prepare records', 'Allowed', 'Allowed', 'Allowed'],
+      ['Post donations / confirm releases', 'Allowed', 'Allowed', 'Drafts only (pending approval)'],
+      ['Approve or reject pending records', 'Allowed', 'Allowed', 'Not allowed'],
+      ['Remove stock / delete unused items', 'Allowed', 'Allowed', 'Not allowed'],
+      ['Export reports / view audit logs', 'Allowed', 'Allowed', 'Read-only reports / own activity'],
+      ['Manage users &amp; assign roles', 'Allowed', 'Not allowed', 'Not allowed']
+    ];
+
+    async function load() {
+      try {
+        const data = await api('/api/users');
+        users = data.users;
+        barangays = data.barangays;
+        draw();
+      } catch (e) {
+        main.innerHTML = '<div class="banner danger"><div><div class="t">Could not load accounts</div><div class="d">' + esc(e.message) + '</div></div></div>';
+      }
+    }
+
+    const barangayOptions = selected => barangays.map(b => '<option value="' + esc(b.id) + '"' + (b.id === selected ? ' selected' : '') + '>' + esc(b.name) + '</option>').join('');
+
+    function draw() {
+      const active = users.filter(u => u.status === 'ACTIVE').length;
+      main.innerHTML =
+        pageHead(me, 'User accounts & roles', 'Admin controls for workspace access and accountable operations.',
+          '<div class="head-actions"><a class="btn" href="/api/backup" id="backupBtn">Download database backup</a><a class="btn primary" href="#addCard">Add user</a></div>') +
+        '<div class="card"><h2>User accounts</h2><p class="sub">' + active + ' active user' + (active === 1 ? '' : 's') + ' · ' + (users.length - active) + ' inactive account' + (users.length - active === 1 ? '' : 's') + '</p>' +
+          '<div class="filters section-gap"><input id="search" placeholder="Search user name or email">' +
+            '<select id="roleFilter"><option value="">All roles</option><option value="ADMIN">Admin</option><option value="BARANGAY_OFFICIAL">Barangay Official</option><option value="ENCODER">Encoder</option></select>' +
+            '<select id="statusFilter"><option value="">All account status</option><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select></div>' +
+          '<div class="table-wrap"><table><thead><tr><th>Name / account</th><th>Role</th><th>Workspace</th><th>Last active</th><th>Status</th><th>Account actions</th></tr></thead><tbody id="rows"></tbody></table></div></div>' +
+        '<div class="card section-gap"><h2>Role permissions</h2><p class="sub">User administration is visible only to Admin accounts. Other roles keep the operational modules.</p>' +
+          '<div class="table-wrap section-gap"><table><thead><tr><th>Capability</th><th>Admin</th><th>Barangay Official</th><th>Encoder</th></tr></thead><tbody>' +
+          PERMISSIONS.map(p => '<tr>' + p.map(c => '<td>' + c + '</td>').join('') + '</tr>').join('') + '</tbody></table></div></div>' +
+        '<div class="two section-gap">' +
+          '<form class="card" id="addCard"><h2>Add new user</h2>' +
+            '<div class="form-error section-gap" id="addError"></div>' +
+            '<div class="form-grid section-gap">' +
+              '<div class="field"><label for="aName">Full name *</label><input id="aName" required></div>' +
+              '<div class="field"><label for="aRole">Assigned role *</label><select id="aRole"><option value="ENCODER">Encoder</option><option value="BARANGAY_OFFICIAL">Barangay Official</option><option value="ADMIN">Admin</option></select></div></div>' +
+            '<div class="field"><label for="aEmail">Email address *</label><input id="aEmail" type="email" required></div>' +
+            '<div class="field" id="aBarangayWrap"><label for="aBarangay">Barangay workspace *</label><select id="aBarangay">' + barangayOptions() + '</select></div>' +
+            '<p class="muted" id="roleHint" style="font-size:12px"></p>' +
+            '<div class="modal-actions"><button type="reset" class="btn">Clear</button><button type="submit" class="btn primary">Create account</button></div></form>' +
+          '<div class="card"><h2>Deactivate account safely</h2>' +
+            '<div class="banner warn section-gap"><div><div class="t">Deactivation never deletes records</div><div class="d">Past transactions stay attributed to the person. Their sign-in stops working straight away.</div></div></div>' +
+            '<p class="muted" style="font-size:13px">Use <b>Deactivate</b> in the account list and give a reason. You cannot deactivate your own account or the last active Admin. Every change is written to the <a href="audit.html">audit log</a>.</p></div>' +
+        '</div>' + pageFooter();
+
+      ['search', 'roleFilter', 'statusFilter'].forEach(id => document.getElementById(id).addEventListener('input', drawRows));
+      const role = document.getElementById('aRole');
+      const hint = () => {
+        document.getElementById('aBarangayWrap').style.display = role.value === 'ADMIN' ? 'none' : 'block';
+        document.getElementById('roleHint').textContent = {
+          ENCODER: 'Encoder can enter records and prepare drafts, but cannot confirm stock-changing transactions or manage accounts.',
+          BARANGAY_OFFICIAL: 'Barangay Official manages records in one barangay, posts donations, confirms releases and exports reports.',
+          ADMIN: 'Admin can access every barangay workspace and manage all accounts and roles.'
+        }[role.value];
+      };
+      role.addEventListener('change', hint);
+      hint();
+      document.getElementById('addCard').addEventListener('submit', addUser);
+      document.getElementById('addCard').addEventListener('reset', () => setTimeout(hint));
+      drawRows();
+    }
+
+    function drawRows() {
+      const q = document.getElementById('search').value.trim().toLowerCase();
+      const role = document.getElementById('roleFilter').value;
+      const status = document.getElementById('statusFilter').value;
+      const list = users.filter(u => (!q || (u.name + ' ' + u.email).toLowerCase().includes(q)) && (!role || u.role === role) && (!status || u.status === status));
+      document.getElementById('rows').innerHTML = list.map(u => {
+        const self = u.id === me.id;
+        return '<tr><td>' + esc(u.name) + (self ? ' <span class="muted">(you)</span>' : '') + '<div class="sub2">' + esc(u.email) + '</div></td>' +
+          '<td>' + esc(u.roleLabel) + '</td><td>' + esc(u.barangay || 'All barangays') + '</td>' +
+          '<td>' + (u.lastActive ? fmtDateTime(u.lastActive) : '<span class="muted">Never</span>') + '</td>' +
+          '<td>' + statusPill(u.status) + '</td>' +
+          '<td><div class="actions"><button class="link" data-role="' + esc(u.id) + '">Edit role</button>' +
+            '<button class="link" data-reset="' + esc(u.id) + '">Reset password</button>' +
+            (self ? '' : '<button class="link' + (u.status === 'ACTIVE' ? ' danger' : '') + '" data-status="' + esc(u.id) + '">' + (u.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate') + '</button>') +
+          '</div></td></tr>';
+      }).join('') || '<tr><td colspan="6" class="muted" style="text-align:center;padding:28px">No accounts match.</td></tr>';
+      document.querySelectorAll('[data-role]').forEach(b => b.addEventListener('click', () => openRole(b.dataset.role)));
+      document.querySelectorAll('[data-status]').forEach(b => b.addEventListener('click', () => openStatus(b.dataset.status)));
+      document.querySelectorAll('[data-reset]').forEach(b => b.addEventListener('click', () => resetPassword(b.dataset.reset)));
+    }
+
+    function showPassword(title, text, password) {
+      document.getElementById('passTitle').textContent = title;
+      document.getElementById('passText').textContent = text;
+      document.getElementById('passValue').textContent = password;
+      openModal('passModal');
+    }
+
+    async function addUser(event) {
+      event.preventDefault();
+      showError('addError', '');
+      const name = document.getElementById('aName').value;
+      const email = document.getElementById('aEmail').value;
+      try {
+        const result = await post('/api/users', {
+          name: name, email: email,
+          role: document.getElementById('aRole').value,
+          barangayId: document.getElementById('aBarangay').value
+        });
+        await load();
+        showPassword('Account created', name + ' can now sign in with ' + email + ' and this temporary password:', result.temporaryPassword);
+      } catch (e) { showError('addError', e.message); }
+    }
+
+    function openRole(id) {
+      target = users.find(u => u.id === id);
+      document.getElementById('roleTitle').textContent = 'Edit role · ' + target.name;
+      document.getElementById('eRole').value = target.role;
+      document.getElementById('eBarangay').innerHTML = barangayOptions(target.barangayId);
+      document.getElementById('eBarangayWrap').style.display = target.role === 'ADMIN' ? 'none' : 'block';
+      showError('roleError', '');
+      openModal('roleModal');
+    }
+    document.getElementById('eRole').addEventListener('change', e => {
+      document.getElementById('eBarangayWrap').style.display = e.target.value === 'ADMIN' ? 'none' : 'block';
+    });
+    document.getElementById('roleForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        await post('/api/users/role', { id: target.id, role: document.getElementById('eRole').value, barangayId: document.getElementById('eBarangay').value });
+        closeModal('roleModal');
+        await load();
+      } catch (e) { showError('roleError', e.message); }
+    });
+
+    function openStatus(id) {
+      target = users.find(u => u.id === id);
+      const deactivating = target.status === 'ACTIVE';
+      document.getElementById('statusTitle').textContent = (deactivating ? 'Deactivate · ' : 'Reactivate · ') + target.name;
+      document.getElementById('statusNote').innerHTML = '<div><div class="d">' + (deactivating
+        ? 'Past transactions remain attributed to ' + esc(target.name.split(' ')[0]) + '. Deactivation never deletes audit or relief records.'
+        : esc(target.name) + ' will be able to sign in again with their current password.') + '</div></div>';
+      document.getElementById('statusSubmit').textContent = deactivating ? 'Deactivate' : 'Reactivate';
+      document.getElementById('sReason').value = '';
+      showError('statusError', '');
+      openModal('statusModal');
+    }
+    document.getElementById('statusForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        await post('/api/users/status', { id: target.id, status: target.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE', reason: document.getElementById('sReason').value });
+        closeModal('statusModal');
+        await load();
+      } catch (e) { showError('statusError', e.message); }
+    });
+
+    async function resetPassword(id) {
+      const user = users.find(u => u.id === id);
+      if (!confirm('Reset the password for ' + user.name + '? Their current password will stop working.')) return;
+      try {
+        const result = await post('/api/users/reset', { id: id });
+        showPassword('Password reset', 'New temporary password for ' + user.name + ':', result.temporaryPassword);
+      } catch (e) { flash('<div class="t">Could not reset password</div><div class="d">' + esc(e.message) + '</div>', 'danger'); }
+    }
+
+    load();
+  })();
+</script>
+</body>
+</html>

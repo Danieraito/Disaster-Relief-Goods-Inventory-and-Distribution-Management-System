@@ -12,6 +12,6 @@ GUI decisions
 
 Phases
 - Phase 1 — Structure: Core classes and relationships done
-- Phase 2 — SQL: Not started
-- Phase 3 — GUI: Not started
-- Phase 4 — Final Testing and Debugging: Not started
+- Phase 2 — SQL: Done (SQLite, repositories, atomic approvals, audit log)
+- Phase 3 — GUI: Done (web pages in web/, all 10 screens)
+- Phase 4 — Final Testing and Debugging: In progress

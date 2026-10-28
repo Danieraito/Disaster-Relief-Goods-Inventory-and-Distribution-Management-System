@@ -25,6 +25,7 @@ CREATE TABLE users (
     password_salt  BLOB NOT NULL,
     password_hash  BLOB NOT NULL,
     status         TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','INACTIVE')),
+    last_active    TEXT,
     CHECK ((role = 'ADMIN' AND barangay_id IS NULL)
         OR (role <> 'ADMIN' AND barangay_id IS NOT NULL))
 );
@@ -39,7 +40,8 @@ CREATE TABLE disasters (
     disaster_date  TEXT NOT NULL,
     status         TEXT NOT NULL,
     severity       TEXT,
-    affected_areas TEXT
+    affected_areas TEXT,
+    closed_date    TEXT
 );
 
 CREATE TABLE evacuation_centers (
@@ -57,7 +59,9 @@ CREATE TABLE households (
     name                    TEXT NOT NULL,
     address                 TEXT NOT NULL,      -- barangay name if homeless
     assistance_requirements TEXT,
-    damage_level            TEXT
+    damage_level            TEXT,
+    evacuation_status       TEXT,               -- e.g. Evacuated / At home
+    faced_number            TEXT                -- FACED (formerly DAFAC) card number
 );
 
 -- Age and the senior/infant/PWD flags are entered separately (human-verified).
@@ -69,7 +73,8 @@ CREATE TABLE family_members (
     is_senior    INTEGER NOT NULL DEFAULT 0 CHECK (is_senior IN (0,1)),
     is_infant    INTEGER NOT NULL DEFAULT 0 CHECK (is_infant IN (0,1)),
     is_pwd       INTEGER NOT NULL DEFAULT 0 CHECK (is_pwd IN (0,1)),
-    is_head      INTEGER NOT NULL DEFAULT 0 CHECK (is_head IN (0,1))
+    is_head      INTEGER NOT NULL DEFAULT 0 CHECK (is_head IN (0,1)),
+    is_pregnant  INTEGER NOT NULL DEFAULT 0 CHECK (is_pregnant IN (0,1))
 );
 -- At most one household head per household.
 CREATE UNIQUE INDEX one_head_per_household ON family_members(household_id) WHERE is_head = 1;
@@ -115,7 +120,9 @@ CREATE TABLE donations (
     delivery_reference TEXT,
     status             TEXT NOT NULL DEFAULT 'DRAFT'
                        CHECK (status IN ('DRAFT','PENDING','APPROVED','REJECTED')),
-    received_by        TEXT REFERENCES users(account_id)   -- set on approval
+    received_by        TEXT REFERENCES users(account_id),  -- set on approval
+    recorded_by        TEXT REFERENCES users(account_id),  -- who entered it
+    recorded_at        TEXT
 );
 
 CREATE TABLE donation_items (
@@ -139,7 +146,10 @@ CREATE TABLE distributions (
     receipt_reference TEXT,
     status            TEXT NOT NULL DEFAULT 'DRAFT'
                       CHECK (status IN ('DRAFT','PENDING','APPROVED','REJECTED')),
-    released_by       TEXT REFERENCES users(account_id)    -- set on approval
+    released_by       TEXT REFERENCES users(account_id),   -- set on approval
+    recorded_by       TEXT REFERENCES users(account_id),   -- who entered it
+    recorded_at       TEXT,
+    round_no          INTEGER NOT NULL DEFAULT 1           -- relief round (one release per household per round)
 );
 
 -- A distribution line must name the exact batch it releases from.
@@ -149,6 +159,21 @@ CREATE TABLE distribution_items (
     item_id         TEXT NOT NULL REFERENCES inventory_items(item_id),
     batch_id        TEXT NOT NULL REFERENCES inventory_batches(batch_id),
     quantity        INTEGER NOT NULL CHECK (quantity > 0)
+);
+
+-- -------------------------------------------------------------- relief packs
+-- A standard bundle per family, e.g. Family Food Pack = 6 kg rice + 4 canned goods.
+CREATE TABLE relief_packs (
+    pack_id     TEXT PRIMARY KEY,
+    barangay_id TEXT NOT NULL REFERENCES barangays(barangay_id),
+    name        TEXT NOT NULL
+);
+
+CREATE TABLE relief_pack_items (
+    pack_id  TEXT NOT NULL REFERENCES relief_packs(pack_id),
+    item_id  TEXT NOT NULL REFERENCES inventory_items(item_id),
+    quantity INTEGER NOT NULL CHECK (quantity > 0),     -- per family
+    PRIMARY KEY (pack_id, item_id)
 );
 
 -- --------------------------------------------------------------- audit logs
@@ -162,7 +187,9 @@ CREATE TABLE audit_logs (
     reference       TEXT,
     before_value    TEXT,
     after_value     TEXT,
-    reason          TEXT
+    reason          TEXT,
+    barangay_id     TEXT,        -- workspace the action happened in (null for admin-wide actions)
+    module          TEXT         -- Inventory, Disasters, Beneficiaries, Donations, Distribution, Users
 );
 
 -- ----------------------------------------------------------------- triggers

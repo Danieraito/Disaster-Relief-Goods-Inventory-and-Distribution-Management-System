@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BarangayCare - Inventory</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="shell"></div>
+<main class="page" id="main"></main>
+
+<!-- Add item -->
+<div class="backdrop" id="addModal">
+  <form class="modal" id="addForm">
+    <h2>Add inventory item</h2>
+    <div class="form-error" id="addError"></div>
+    <div class="field" id="barangayField" style="display:none"><label for="fBarangay">Barangay</label><select id="fBarangay"></select></div>
+    <div class="form-grid">
+      <div class="field"><label for="fName">Item name</label><input id="fName" placeholder="e.g. Family food pack" required></div>
+      <div class="field"><label for="fCategory">Category</label><input id="fCategory" placeholder="e.g. Food, Water, Medicine"></div>
+      <div class="field"><label for="fUnit">Unit</label><input id="fUnit" placeholder="a word: sack, can, liter, kit" required></div>
+      <div class="field"><label for="fThreshold">Low-stock threshold</label><input id="fThreshold" type="number" min="0" value="0"></div>
+      <div class="field"><label for="fLocation">Storage location</label><input id="fLocation" placeholder="e.g. Hall A-01"></div>
+      <div class="field"><label for="fQuantity">Opening stock quantity</label><input id="fQuantity" type="number" min="0" value="0"></div>
+    </div>
+    <div class="field"><label for="fExpiry">Opening stock expiry date (optional)</label><input id="fExpiry" type="date"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn" id="addCancel">Cancel</button>
+      <button type="submit" class="btn primary">Save item</button>
+    </div>
+  </form>
+</div>
+
+<!-- Batches -->
+<div class="backdrop" id="batchModal">
+  <div class="modal">
+    <h2 id="batchTitle">Batches</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Batch ID</th><th>Received</th><th>Expiry</th><th>Received qty</th><th>Remaining qty</th></tr></thead>
+      <tbody id="batchRows"></tbody>
+    </table></div>
+    <div class="modal-actions"><button class="btn" id="batchClose">Close</button></div>
+  </div>
+</div>
+
+<!-- Remove stock -->
+<div class="backdrop" id="removeModal">
+  <form class="modal" id="removeForm">
+    <h2 id="removeTitle">Remove stock</h2>
+    <p class="muted" style="font-size:13px">Use this to correct a wrong entry or take out damaged, expired or lost goods. The change and reason are kept in the audit log.</p>
+    <div class="form-error section-gap" id="removeError"></div>
+    <div class="field section-gap"><label for="rBatch">Batch</label><select id="rBatch" required></select></div>
+    <div class="form-grid">
+      <div class="field"><label for="rQty">Quantity to remove</label><input id="rQty" type="number" min="1" required>
+        <div class="hint" id="rAfter"></div></div>
+      <div class="field"><label for="rReason">Reason</label>
+        <select id="rReason" required>
+          <option value="">Choose reason</option>
+          <option>Encoding error</option>
+          <option>Damaged</option>
+          <option>Expired / disposed</option>
+          <option>Lost or missing</option>
+          <option>Physical count correction</option>
+        </select></div>
+    </div>
+    <div class="field"><label for="rNote">Details</label><textarea id="rNote" placeholder="e.g. Typed 120 instead of 20 / 6 torn kits, count verified"></textarea></div>
+    <div class="modal-actions">
+      <button type="button" class="btn" data-close="removeModal">Cancel</button>
+      <button type="submit" class="btn primary">Remove stock</button>
+    </div>
+  </form>
+</div>
+
+<!-- Edit item -->
+<div class="backdrop" id="editModal">
+  <form class="modal" id="editForm">
+    <h2 id="editTitle">Edit item</h2>
+    <div class="form-error" id="editError"></div>
+    <div class="form-grid section-gap">
+      <div class="field"><label for="eName">Item name</label><input id="eName" required></div>
+      <div class="field"><label for="eCategory">Category</label><input id="eCategory"></div>
+      <div class="field"><label for="eThreshold">Low-stock threshold</label><input id="eThreshold" type="number" min="0" required></div>
+      <div class="field"><label for="eLocation">Storage location</label><input id="eLocation"></div>
+    </div>
+    <p class="muted" style="font-size:12px" id="eUnit"></p>
+    <div class="field"><label for="eReason">Reason (optional)</label><input id="eReason" placeholder="e.g. Increase response buffer"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn" data-close="editModal">Cancel</button>
+      <button type="submit" class="btn primary">Save changes</button>
+    </div>
+  </form>
+</div>
+
+<!-- Delete item -->
+<div class="backdrop" id="deleteModal">
+  <form class="modal" id="deleteForm">
+    <h2 id="deleteTitle">Delete item</h2>
+    <p class="muted" style="font-size:13px">Only items never used in a donation or distribution can be deleted. The deletion is kept in the audit log.</p>
+    <div class="form-error section-gap" id="deleteError"></div>
+    <div class="field section-gap"><label for="dReason">Reason</label><textarea id="dReason" placeholder="e.g. Duplicate item added by mistake" required></textarea></div>
+    <div class="modal-actions">
+      <button type="button" class="btn" data-close="deleteModal">Cancel</button>
+      <button type="submit" class="btn primary">Delete item</button>
+    </div>
+  </form>
+</div>
+
+<script src="app.js"></script>
+<script>
+  (async function () {
+    const me = await startPage('Inventory');
+    const main = document.getElementById('main');
+    let items = [];
+    let barangays = [];
+    let tab = 'all';
+    let target = null;
+    document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => closeModal(b.dataset.close)));
+
+    const TABS = [['all', 'All items'], ['low', 'Low stock'], ['expiring', 'Expiring'], ['expired', 'Expired']];
+    const inTab = (i, t) => t === 'all' || (t === 'low' && i.low) || (t === 'expiring' && i.expiringQuantity > 0) || (t === 'expired' && i.expiredQuantity > 0);
+
+    async function load() {
+      try {
+        const data = await api('/api/inventory');
+        items = data.items;
+        barangays = data.barangays;
+        draw();
+      } catch (e) {
+        main.innerHTML = '<div class="banner danger"><div><div class="t">Could not load inventory</div><div class="d">' + esc(e.message) + '</div></div></div>';
+      }
+    }
+
+    function draw() {
+      const units = items.reduce((s, i) => s + i.available, 0);
+      const low = items.filter(i => i.low).length;
+      const expiringItems = items.filter(i => i.expiringQuantity > 0);
+      const expiredItems = items.filter(i => i.expiredQuantity > 0);
+      const expiredUnits = expiredItems.reduce((s, i) => s + i.expiredQuantity, 0);
+      const firstExpired = expiredItems[0];
+
+      let banner = '';
+      if (firstExpired) {
+        banner = '<div class="banner danger"><div><div class="t">Expired goods are excluded from distribution availability</div>' +
+          '<div class="d">' + esc(firstExpired.name) + ': ' + fmtNum(firstExpired.total) + ' ' + esc(firstExpired.unit) + ' recorded, ' +
+          fmtNum(firstExpired.expiredQuantity) + ' expired, ' + fmtNum(firstExpired.available) + ' available.</div></div></div>';
+      }
+
+      main.innerHTML =
+        pageHead(me, 'Inventory', 'Track available goods, storage locations and safe release dates.',
+          '<button class="btn primary" id="addBtn"' + (me.canEnterRecords ? '' : ' disabled') + '>Add item</button>') +
+        '<div class="stats">' +
+          '<div class="stat"><div class="cap">Recorded stock</div><div class="val">' + fmtNum(units) + '</div><div class="note">Mixed units &middot; ' + items.length + ' active item records</div></div>' +
+          '<div class="stat"><div class="cap">Low-stock items</div><div class="val warn">' + low + '</div><div class="note">' + (low ? 'Replenish soon' : 'All items above threshold') + '</div></div>' +
+          '<div class="stat"><div class="cap">Expiring in 30 days</div><div class="val">' + expiringItems.length + '</div><div class="note">' +
+            (expiringItems[0] ? esc(expiringItems[0].name) + ' &middot; ' + fmtDate(expiringItems[0].earliestExpiry) : 'No upcoming expiry') + '</div></div>' +
+          '<div class="stat"><div class="cap">Expired stock</div><div class="val danger">' + fmtNum(expiredUnits) + '</div><div class="note">' + (expiredUnits ? 'Unavailable for release' : 'None') + '</div></div>' +
+        '</div>' + banner +
+        '<div class="card">' +
+          '<div class="card-head"><div><h2>Relief item records</h2><p class="sub">Stock is shown by its own unit; mixed units are not equivalent quantities.</p></div>' +
+            '<button class="btn" id="exportBtn">Export stock report</button></div>' +
+          '<div class="subtabs" id="subtabs"></div>' +
+          '<div class="filters"><input id="search" placeholder="Search item name or item ID">' +
+            '<select id="catFilter"></select><select id="locFilter"></select></div>' +
+          '<div class="table-wrap"><table><thead><tr><th>Item / category</th><th>Quantity / unit</th><th>Threshold</th><th>Expiry</th><th>Storage</th><th>Status / action</th></tr></thead>' +
+          '<tbody id="rows"></tbody></table></div>' +
+          '<div class="foot" id="count"></div>' +
+        '</div>';
+
+      fillSelect('catFilter', 'All categories', items.map(i => i.category));
+      fillSelect('locFilter', 'All locations', items.map(i => i.storage));
+      document.getElementById('addBtn').addEventListener('click', openAdd);
+      document.getElementById('exportBtn').addEventListener('click', exportCsv);
+      ['search', 'catFilter', 'locFilter'].forEach(id => document.getElementById(id).addEventListener('input', drawRows));
+      drawTabs();
+      drawRows();
+    }
+
+    function fillSelect(id, allLabel, values) {
+      const select = document.getElementById(id);
+      const unique = Array.from(new Set(values.filter(v => v)));
+      select.innerHTML = '<option value="">' + allLabel + '</option>' + unique.map(v => '<option>' + esc(v) + '</option>').join('');
+    }
+
+    function drawTabs() {
+      document.getElementById('subtabs').innerHTML = TABS.map(t => {
+        const count = items.filter(i => inTab(i, t[0])).length;
+        const label = t[0] === 'all' ? t[1] : t[1] + ' (' + count + ')';
+        return '<button class="subtab' + (t[0] === tab ? ' active' : '') + '" data-tab="' + t[0] + '">' + label + '</button>';
+      }).join('');
+      document.querySelectorAll('.subtab').forEach(b => b.addEventListener('click', () => { tab = b.dataset.tab; drawTabs(); drawRows(); }));
+    }
+
+    function visibleItems() {
+      const query = document.getElementById('search').value.trim().toLowerCase();
+      const cat = document.getElementById('catFilter').value;
+      const loc = document.getElementById('locFilter').value;
+      return items.filter(i => inTab(i, tab) &&
+        (!query || i.name.toLowerCase().includes(query) || i.id.toLowerCase().includes(query)) &&
+        (!cat || i.category === cat) && (!loc || i.storage === loc));
+    }
+
+    function drawRows() {
+      const shown = visibleItems();
+      document.getElementById('rows').innerHTML = shown.map(i =>
+        '<tr><td><div>' + esc(i.name) + '</div><div class="sub2">' + esc(i.category || '\u2014') + ' &middot; ' + esc(i.id) +
+          (me.role === 'ADMIN' && i.barangay ? ' &middot; ' + esc(i.barangay) : '') + '</div></td>' +
+        '<td>' + fmtNum(i.total) + ' ' + esc(i.unit) + (i.expiredQuantity > 0 ? '<div class="sub2">' + fmtNum(i.available) + ' available</div>' : '') + '</td>' +
+        '<td>' + fmtNum(i.threshold) + ' ' + esc(i.unit) + '</td>' +
+        '<td>' + fmtDate(i.earliestExpiry) + '</td>' +
+        '<td>' + esc(i.storage || '\u2014') + '</td>' +
+        '<td><span class="st st-' + i.status + '">' + esc(i.statusText) + '</span> &middot; <button class="link" data-view="' + esc(i.id) + '">View batches</button>' +
+          (me.canManageRecords ? ' &middot; <button class="link" data-edit="' + esc(i.id) + '">Edit</button>' + (i.total > 0 ? ' &middot; <button class="link" data-remove="' + esc(i.id) + '">Remove stock</button>' : '') +
+            (!i.used ? ' &middot; <button class="link danger" data-delete="' + esc(i.id) + '">Delete</button>' : '') : '') + '</td></tr>'
+      ).join('') || '<tr><td colspan="6" class="muted" style="text-align:center;padding:28px">No items match.</td></tr>';
+      document.getElementById('count').textContent = 'Showing ' + shown.length + ' of ' + items.length + ' item records';
+      document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => showBatches(b.dataset.view)));
+      document.querySelectorAll('[data-remove]').forEach(b => b.addEventListener('click', () => openRemove(b.dataset.remove)));
+      document.querySelectorAll('[data-delete]').forEach(b => b.addEventListener('click', () => openDelete(b.dataset.delete)));
+      document.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => openEdit(b.dataset.edit)));
+    }
+
+    function showBatches(id) {
+      const item = items.find(i => i.id === id);
+      if (!item) return;
+      document.getElementById('batchTitle').textContent = 'Batches \u00b7 ' + item.name;
+      document.getElementById('batchRows').innerHTML = item.batches.map(b =>
+        '<tr><td>' + esc(b.id) + '</td><td>' + esc(b.received || '\u2014') + '</td><td>' + esc(b.expiry || 'Not applicable') +
+        '</td><td>' + fmtNum(b.receivedQuantity) + '</td><td>' + fmtNum(b.remainingQuantity) + '</td></tr>').join('') ||
+        '<tr><td colspan="5" class="muted">No batches yet.</td></tr>';
+      document.getElementById('batchModal').classList.add('open');
+    }
+    document.getElementById('batchClose').addEventListener('click', () => document.getElementById('batchModal').classList.remove('open'));
+
+    // ---- add item ----
+    function openAdd() {
+      document.getElementById('addForm').reset();
+      document.getElementById('addError').style.display = 'none';
+      const field = document.getElementById('barangayField');
+      if (me.role === 'ADMIN') {
+        field.style.display = 'block';
+        document.getElementById('fBarangay').innerHTML = barangays.map(b => '<option value="' + esc(b.id) + '">' + esc(b.name) + '</option>').join('');
+      } else {
+        field.style.display = 'none';
+      }
+      document.getElementById('addModal').classList.add('open');
+    }
+    document.getElementById('addCancel').addEventListener('click', () => document.getElementById('addModal').classList.remove('open'));
+    document.getElementById('addForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const error = document.getElementById('addError');
+      error.style.display = 'none';
+      const body = new URLSearchParams({
+        barangayId: document.getElementById('fBarangay').value || '',
+        name: document.getElementById('fName').value,
+        category: document.getElementById('fCategory').value,
+        unit: document.getElementById('fUnit').value,
+        threshold: document.getElementById('fThreshold').value,
+        location: document.getElementById('fLocation').value,
+        quantity: document.getElementById('fQuantity').value,
+        expiry: document.getElementById('fExpiry').value
+      });
+      try {
+        await api('/api/inventory', { method: 'POST', body: body });
+        document.getElementById('addModal').classList.remove('open');
+        await load();
+      } catch (e) {
+        error.textContent = e.message;
+        error.style.display = 'block';
+      }
+    });
+
+    // ---- export ----
+    function exportCsv() {
+      const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+      const lines = [['Item ID', 'Item', 'Category', 'Quantity', 'Unit', 'Available', 'Threshold', 'Earliest expiry', 'Storage', 'Status'].map(q).join(',')];
+      visibleItems().forEach(i => lines.push([i.id, i.name, i.category, i.total, i.unit, i.available, i.threshold,
+        i.earliestExpiry || 'Not applicable', i.storage, i.statusText].map(q).join(',')));
+      const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'stock-report.csv';
+      link.click();
+      URL.revokeObjectURL(link.href);
+    }
+
+    // ---- remove stock (Admins and Officials only)
+    function updateAfter() {
+      const batch = target.batches.find(b => b.id === document.getElementById('rBatch').value);
+      const qty = Number(document.getElementById('rQty').value) || 0;
+      document.getElementById('rAfter').textContent = batch
+        ? 'Batch ' + batch.id + ': ' + fmtNum(batch.remainingQuantity) + ' \u2192 ' + fmtNum(Math.max(batch.remainingQuantity - qty, 0)) + ' ' + target.unit
+        : '';
+    }
+    function openRemove(id) {
+      target = items.find(i => i.id === id);
+      document.getElementById('removeForm').reset();
+      document.getElementById('removeTitle').textContent = 'Remove stock \u00b7 ' + target.name;
+      const batches = target.batches.filter(b => b.remainingQuantity > 0);
+      document.getElementById('rBatch').innerHTML = (batches.length > 1 ? '<option value="">Choose batch</option>' : '') +
+        batches.map(b => '<option value="' + esc(b.id) + '">' + esc(b.id) + ' \u00b7 ' + fmtNum(b.remainingQuantity) + ' ' + esc(target.unit) +
+          (b.expiry ? ' \u00b7 exp ' + fmtDate(b.expiry) : '') + '</option>').join('');
+      updateAfter();
+      showError('removeError', '');
+      openModal('removeModal');
+    }
+    document.getElementById('rBatch').addEventListener('change', updateAfter);
+    document.getElementById('rQty').addEventListener('input', updateAfter);
+    document.getElementById('removeForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        const result = await post('/api/inventory/remove', {
+          itemId: target.id,
+          batchId: document.getElementById('rBatch').value,
+          quantity: document.getElementById('rQty').value,
+          reason: document.getElementById('rReason').value,
+          note: document.getElementById('rNote').value
+        });
+        closeModal('removeModal');
+        await load();
+        flash('<div class="t">' + esc(result.reference) + ' \u00b7 ' + fmtNum(document.getElementById('rQty').value) + ' ' + esc(target.unit) + ' removed from ' + esc(target.name) + '</div>' +
+          '<div class="d">The adjustment and reason are recorded in the audit log.</div>');
+      } catch (e) { showError('removeError', e.message); }
+    });
+
+    // ---- edit item details (Admins and Officials only)
+    function openEdit(id) {
+      target = items.find(i => i.id === id);
+      document.getElementById('editTitle').textContent = 'Edit ' + target.name + ' (' + target.id + ')';
+      document.getElementById('eName').value = target.name;
+      document.getElementById('eCategory').value = target.category || '';
+      document.getElementById('eThreshold').value = target.threshold;
+      document.getElementById('eLocation').value = target.storage || '';
+      document.getElementById('eReason').value = '';
+      document.getElementById('eUnit').textContent = 'Unit: ' + target.unit + ' (cannot be changed because stock is counted in it).';
+      showError('editError', '');
+      openModal('editModal');
+    }
+    document.getElementById('editForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        await post('/api/inventory/update', {
+          itemId: target.id,
+          name: document.getElementById('eName').value,
+          category: document.getElementById('eCategory').value,
+          threshold: document.getElementById('eThreshold').value,
+          location: document.getElementById('eLocation').value,
+          reason: document.getElementById('eReason').value
+        });
+        closeModal('editModal');
+        await load();
+        flash('<div class="t">' + esc(target.id) + ' updated</div><div class="d">The change is recorded in the audit log.</div>');
+      } catch (e) { showError('editError', e.message); }
+    });
+
+    // ---- delete unused item
+    function openDelete(id) {
+      target = items.find(i => i.id === id);
+      document.getElementById('deleteTitle').textContent = 'Delete ' + target.name + ' (' + target.id + ')';
+      document.getElementById('dReason').value = '';
+      showError('deleteError', '');
+      openModal('deleteModal');
+    }
+    document.getElementById('deleteForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        await post('/api/inventory/delete', { itemId: target.id, reason: document.getElementById('dReason').value });
+        closeModal('deleteModal');
+        await load();
+        flash('<div class="t">' + esc(target.name) + ' deleted</div><div class="d">The deletion is recorded in the audit log.</div>');
+      } catch (e) { showError('deleteError', e.message); }
+    });
+
+    load();
+  })();
+</script>
+</body>
+</html>

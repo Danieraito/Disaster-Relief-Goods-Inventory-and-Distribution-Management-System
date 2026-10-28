@@ -14,6 +14,7 @@ public class Distribution implements BarangayScoped {
     private String releaseLocation;
     private String receiptReference;
     private UserAccount releasedBy;
+    private int roundNumber = 1;
     private final List<TransactionItem> items = new ArrayList<>();
     private TransactionStatus status = TransactionStatus.DRAFT;
 
@@ -102,6 +103,22 @@ public class Distribution implements BarangayScoped {
         this.receiptReference = receiptReference;
     }
 
+    /**
+     * Relief is given in rounds (for example a food pack every few days). A household may receive
+     * one release per round of a disaster.
+     */
+    public int getRoundNumber() {
+        return roundNumber;
+    }
+
+    public void setRoundNumber(int roundNumber) {
+        requireDraft();
+        if (roundNumber < 1) {
+            throw new IllegalArgumentException("Round number must be 1 or higher.");
+        }
+        this.roundNumber = roundNumber;
+    }
+
     public UserAccount getReleasedBy() {
         return releasedBy;
     }
@@ -117,6 +134,12 @@ public class Distribution implements BarangayScoped {
 
     public TransactionStatus getStatus() {
         return status;
+    }
+
+    // Used only when loading a saved distribution from the database (items are added first, while still a draft).
+    void restoreStatus(TransactionStatus savedStatus, UserAccount savedReleasedBy) {
+        this.status = Objects.requireNonNull(savedStatus, "status");
+        this.releasedBy = savedReleasedBy;
     }
 
     public Distribution submit(UserAccount submitter) {

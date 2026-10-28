@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BarangayCare - Beneficiaries</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="shell"></div>
+<main class="page" id="main"></main>
+
+<!-- Register / edit household -->
+<div class="backdrop" id="regModal">
+  <form class="modal wide" id="regForm">
+    <h2 id="regTitle">Register household</h2>
+    <p class="muted" id="regDisaster"></p>
+    <div class="form-error" id="regError"></div>
+    <div class="banner warn" id="regWarn" style="display:none;margin:12px 0"></div>
+    <div class="form-grid section-gap">
+      <div class="field"><label for="hAddress">Address (street, purok)</label><input id="hAddress" placeholder="e.g. 18 Mabini St., Purok 2"></div>
+      <div class="field"><label for="hFaced">FACED / DAFAC card no.</label><input id="hFaced" placeholder="Family Access Card number (if issued)"></div>
+      <div class="field"><label for="hDamage">House damage</label>
+        <select id="hDamage"><option value="">Not assessed</option><option>Not damaged</option><option>Partially damaged</option><option>Totally damaged</option></select></div>
+      <div class="field"><label for="hEvac">Evacuation status</label>
+        <select id="hEvac"><option value="">Not recorded</option><option>At home</option><option>Evacuated</option><option>With relatives</option></select></div>
+    </div>
+    <div class="field"><label for="hNeeds">Assistance needed</label><input id="hNeeds" placeholder="e.g. Food, water, hygiene kit, medicine"></div>
+    <label class="check"><input type="checkbox" id="hHomeless"> No fixed address (the barangay name is recorded as the address)</label>
+
+    <h3>Confirmed family members</h3>
+    <p class="muted" style="font-size:12px;margin-bottom:8px">Enter age and categories as verified. Categories are not worked out from age. Choose one member as household head; they receive aid for the family. "Preg." means pregnant or lactating.</p>
+    <div class="lines" id="members"></div>
+    <button type="button" class="btn add-line" id="addMember">+ Add member</button>
+    <div class="field section-gap" id="reasonWrap" style="display:none"><label for="hReason">What changed and why (kept in the audit log)</label><input id="hReason" placeholder="e.g. Added newborn; corrected age of head"></div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn" data-close="regModal">Cancel</button>
+      <button type="submit" class="btn primary" id="regSubmit">Register household</button>
+    </div>
+  </form>
+</div>
+
+<!-- Household details -->
+<div class="backdrop" id="viewModal">
+  <div class="modal wide">
+    <h2 id="viewTitle">Household</h2>
+    <div id="viewBody"></div>
+    <div class="modal-actions">
+      <button class="btn" data-close="viewModal">Close</button>
+      <button class="btn primary" id="editBtn">Edit household</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+  (async function () {
+    const me = await startPage('Beneficiaries');
+    const main = document.getElementById('main');
+    let disasters = [];
+    let households = [];
+    let current = null;
+    let tab = 'all';
+    let page = 1;
+    let sort = 'priority';
+    let confirmDuplicate = false;
+    let editing = null;   // household being edited, or null when registering
+
+    document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => closeModal(b.dataset.close)));
+
+    async function load() {
+      try {
+        const data = await api('/api/households');
+        disasters = data.disasters;
+        households = data.households;
+        const wanted = new URLSearchParams(location.search).get('disaster');
+        current = disasters.find(d => d.id === (current ? current.id : wanted)) ||
+          disasters.find(disasterIsActive) || disasters[0] || null;
+        draw();
+      } catch (e) {
+        main.innerHTML = '<div class="banner danger"><div><div class="t">Could not load households</div><div class="d">' + esc(e.message) + '</div></div></div>';
+      }
+    }
+
+    const inEvent = () => households.filter(h => current && h.disasterId === current.id);
+    const isVulnerable = h => h.seniors + h.infants + h.pwd + h.pregnant > 0;
+    const statusOf = h => h.assistedBy ? 'Assisted' : 'Pending';
+    const priorityLabel = p => p >= 10 ? ['High', 'danger'] : p >= 5 ? ['Medium', 'warn'] : ['Normal', 'muted'];
+
+    function groups(h) {
+      const g = [];
+      if (h.seniors) g.push(h.seniors > 1 ? h.seniors + ' seniors' : 'Senior');
+      if (h.pwd) g.push('PWD' + (h.pwd > 1 ? ' ×' + h.pwd : ''));
+      if (h.pregnant) g.push('Pregnant' + (h.pregnant > 1 ? ' ×' + h.pregnant : ''));
+      if (h.infants) g.push(h.infants > 1 ? h.infants + ' infants' : 'Infant');
+      return g.join(', ') || 'No special category';
+    }
+
+    function draw() {
+      if (!current) {
+        main.innerHTML = pageHead(me, 'Beneficiaries', 'Register affected households and keep their assistance needs in view.', '') +
+          '<div class="banner info"><div><div class="t">No disaster recorded yet</div><div class="d">Households are registered under a disaster event. Record one on the <a href="disasters.html">Disasters</a> screen first.</div></div></div>' + pageFooter();
+        return;
+      }
+      const list = inEvent();
+      const individuals = list.reduce((s, h) => s + h.members, 0);
+      const seniors = list.reduce((s, h) => s + h.seniors, 0);
+      const pwd = list.reduce((s, h) => s + h.pwd, 0);
+      const infants = list.reduce((s, h) => s + h.infants, 0);
+      const pregnant = list.reduce((s, h) => s + h.pregnant, 0);
+      const assisted = list.filter(h => h.assistedBy).length;
+      const highPending = list.filter(h => !h.assistedBy && h.priority >= 10).length;
+      const active = disasterIsActive(current);
+
+      main.innerHTML =
+        pageHead(me, 'Beneficiaries', 'Register affected households and keep their assistance needs in view.',
+          '<button class="btn primary" id="regBtn"' + (me.canEnterRecords && active ? '' : ' disabled title="Reopen the disaster to register households"') + '>Register household</button>') +
+        '<div class="context"><div><div class="t">' + esc(current.name) + ' · ' + esc(current.id) + '</div>' +
+          '<div class="d">' + fmtDate(current.date) + ' · ' + esc(current.affectedAreas || '') + ' · ' + esc(titleCase(current.severity)) + ' severity' +
+          (me.role === 'ADMIN' ? ' · ' + esc(current.barangay) : '') + '</div></div>' +
+          '<div class="right"><span class="tag' + (active ? '' : ' closed') + '">' + (active ? 'Active response' : 'Closed event') + '</span>' +
+          '<select id="changeDisaster" aria-label="Change disaster">' + disasters.map(d => '<option value="' + esc(d.id) + '"' + (d.id === current.id ? ' selected' : '') + '>' +
+            esc(d.name) + (disasterIsActive(d) ? '' : ' (closed)') + '</option>').join('') + '</select></div></div>' +
+        '<div class="stats">' +
+          '<div class="stat"><div class="cap">Families</div><div class="val">' + fmtNum(list.length) + '</div><div class="note">Unique households in this event</div></div>' +
+          '<div class="stat"><div class="cap">Individuals</div><div class="val">' + fmtNum(individuals) + '</div><div class="note">From family member records</div></div>' +
+          '<div class="stat"><div class="cap">Vulnerable individuals</div><div class="val">' + fmtNum(seniors + pwd + infants + pregnant) + '</div><div class="note">' + seniors + ' senior · ' + pwd + ' PWD · ' + pregnant + ' pregnant · ' + infants + ' infants</div></div>' +
+          '<div class="stat"><div class="cap">Pending assistance</div><div class="val warn">' + fmtNum(list.length - assisted) + '</div><div class="note">' + highPending + ' high priority · ' + fmtNum(assisted) + ' assisted</div></div>' +
+        '</div>' +
+        '<div class="card"><h2>Household records</h2><p class="sub">Status and prior assistance are specific to ' + esc(current.name) + '. Priority is worked out from vulnerable members, house damage and evacuation.</p>' +
+          '<div class="subtabs">' +
+            '<button class="subtab" data-tab="all">All households</button>' +
+            '<button class="subtab" data-tab="pending">Pending (' + (list.length - assisted) + ')</button>' +
+            '<button class="subtab" data-tab="assisted">Assisted (' + assisted + ')</button>' +
+            '<button class="subtab" data-tab="vulnerable">Vulnerable groups</button></div>' +
+          '<div class="filters"><input id="search" placeholder="Search household ID, FACED no., head of household or address">' +
+            '<select id="damageFilter"><option value="">All damage</option><option>Not damaged</option><option>Partially damaged</option><option>Totally damaged</option></select>' +
+            '<select id="evacFilter"><option value="">All evacuation</option><option>At home</option><option>Evacuated</option><option>With relatives</option></select>' +
+            '<select id="sortBy"><option value="priority">Sort: highest priority</option><option value="newest">Sort: newest first</option><option value="name">Sort: head name</option></select></div>' +
+          '<div class="table-wrap"><table><thead><tr><th>Household / head</th><th>Address</th><th>Members / groups</th><th>Damage / evacuation</th><th>Needs</th><th>Priority</th><th>Status</th><th></th></tr></thead>' +
+          '<tbody id="rows"></tbody></table><div id="pager"></div></div></div>' +
+        '<div class="banner info section-gap"><div><div class="t">Household IDs stay unique</div><div class="d">Review similar names, addresses and FACED card numbers before registration. One household may have separate assistance records for different disasters.</div></div></div>' +
+        pageFooter();
+
+      document.getElementById('changeDisaster').addEventListener('change', e => {
+        current = disasters.find(d => d.id === e.target.value);
+        page = 1;
+        history.replaceState(null, '', 'beneficiaries.html?disaster=' + encodeURIComponent(current.id));
+        draw();
+      });
+      document.querySelectorAll('.subtab').forEach(b => {
+        b.classList.toggle('active', b.dataset.tab === tab);
+        b.addEventListener('click', () => { tab = b.dataset.tab; page = 1; draw(); });
+      });
+      document.getElementById('sortBy').value = sort;
+      document.getElementById('sortBy').addEventListener('change', e => { sort = e.target.value; page = 1; drawRows(); });
+      ['search', 'damageFilter', 'evacFilter'].forEach(id => document.getElementById(id).addEventListener('input', () => { page = 1; drawRows(); }));
+      document.getElementById('regBtn').addEventListener('click', () => openForm(null));
+      drawRows();
+    }
+
+    function drawRows() {
+      const q = document.getElementById('search').value.trim().toLowerCase();
+      const damage = document.getElementById('damageFilter').value;
+      const evac = document.getElementById('evacFilter').value;
+      const list = inEvent().filter(h =>
+        (tab === 'all' || (tab === 'pending' && !h.assistedBy) || (tab === 'assisted' && h.assistedBy) || (tab === 'vulnerable' && isVulnerable(h))) &&
+        (!q || (h.id + ' ' + (h.facedNumber || '') + ' ' + h.head + ' ' + h.address).toLowerCase().includes(q)) &&
+        (!damage || h.damage === damage) && (!evac || h.evacuation === evac));
+      if (sort === 'priority') list.sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id));
+      else if (sort === 'name') list.sort((a, b) => a.head.localeCompare(b.head));
+      const p = paginate(list, page, 10, n => { page = n; drawRows(); }, 'households');
+      document.getElementById('rows').innerHTML = p.rows.map(h => {
+        const pl = priorityLabel(h.priority);
+        return '<tr><td>' + esc(h.id) + '<div class="sub2">' + esc(h.head) + (h.facedNumber ? ' · FACED ' + esc(h.facedNumber) : '') + '</div></td>' +
+          '<td>' + esc(h.address) + '</td>' +
+          '<td>' + h.members + ' member' + (h.members === 1 ? '' : 's') + '<div class="sub2">' + esc(groups(h)) + '</div></td>' +
+          '<td>' + esc(h.damage || '—') + '<div class="sub2">' + esc(h.evacuation || '') + '</div></td>' +
+          '<td>' + esc(h.needs || '—') + '</td>' +
+          '<td><span class="pill-st ' + pl[1] + '">' + pl[0] + '</span><div class="sub2">Score ' + h.priority + '</div></td>' +
+          '<td><span class="pill-st ' + (h.assistedBy ? 'ok' : 'warn') + '">' + statusOf(h) + '</span>' +
+            '<div class="sub2">' + esc(h.assistedBy || (h.pendingRelease ? h.pendingRelease + ' awaiting approval' : '')) + '</div></td>' +
+          '<td><button class="link" data-view="' + esc(h.id) + '">View</button></td></tr>';
+      }).join('') || '<tr><td colspan="8" class="muted" style="text-align:center;padding:28px">No households match.</td></tr>';
+      const pager = document.getElementById('pager');
+      pager.innerHTML = '';
+      pager.appendChild(p.footer);
+      document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => view(b.dataset.view)));
+    }
+
+    function view(id) {
+      const h = households.find(x => x.id === id);
+      const pl = priorityLabel(h.priority);
+      document.getElementById('viewTitle').textContent = h.id + ' · ' + h.head;
+      document.getElementById('viewBody').innerHTML =
+        '<div class="receipt"><dl>' +
+          '<dt>Disaster</dt><dd>' + esc(h.disaster) + '</dd>' +
+          '<dt>FACED card no.</dt><dd>' + esc(h.facedNumber || 'Not recorded') + '</dd>' +
+          '<dt>Address</dt><dd>' + esc(h.address) + '</dd>' +
+          '<dt>House damage</dt><dd>' + esc(h.damage || 'Not assessed') + '</dd>' +
+          '<dt>Evacuation</dt><dd>' + esc(h.evacuation || 'Not recorded') + '</dd>' +
+          '<dt>Assistance needed</dt><dd>' + esc(h.needs || '—') + '</dd>' +
+          '<dt>Priority</dt><dd>' + pl[0] + ' (score ' + h.priority + ')</dd>' +
+          '<dt>Status</dt><dd>' + statusOf(h) + (h.assistedBy ? ' · latest release ' + esc(h.assistedBy) : '') + '</dd></dl></div>' +
+        '<div class="table-wrap"><table class="mini"><thead><tr><th>Member</th><th>Age</th><th>Senior</th><th>Infant</th><th>PWD</th><th>Pregnant</th><th>Role</th></tr></thead><tbody>' +
+        h.memberList.map(m => '<tr><td>' + esc(m.name) + '</td><td>' + m.age + '</td><td>' + (m.senior ? 'Yes' : '—') + '</td><td>' +
+          (m.infant ? 'Yes' : '—') + '</td><td>' + (m.pwd ? 'Yes' : '—') + '</td><td>' + (m.pregnant ? 'Yes' : '—') + '</td><td>' + (m.head ? '<b>Household head</b>' : 'Member') + '</td></tr>').join('') +
+        '</tbody></table></div>' +
+        (disasterIsActive(current) ? '<p class="section-gap"><a class="btn" href="distribution.html?disaster=' + encodeURIComponent(h.disasterId) + '&household=' + encodeURIComponent(h.id) + '">Release goods to this household</a></p>' : '');
+      const edit = document.getElementById('editBtn');
+      edit.style.display = me.canEnterRecords ? '' : 'none';
+      edit.onclick = () => { closeModal('viewModal'); openForm(h); };
+      openModal('viewModal');
+    }
+
+    // ---- register / edit household
+    function memberRow(index, m) {
+      const row = document.createElement('div');
+      row.className = 'line member';
+      row.dataset.id = m ? m.id : '';
+      row.innerHTML =
+        '<div><label>Full name</label><input class="mName" required></div>' +
+        '<div><label>Age</label><input class="mAge" type="number" min="0" max="130" required></div>' +
+        '<div class="tick">Senior<input type="checkbox" class="mSenior"></div>' +
+        '<div class="tick">Infant<input type="checkbox" class="mInfant"></div>' +
+        '<div class="tick">PWD<input type="checkbox" class="mPwd"></div>' +
+        '<div class="tick">Preg.<input type="checkbox" class="mPregnant"></div>' +
+        '<div class="tick">Head<input type="radio" name="head" class="mHead"></div>' +
+        '<button type="button" class="remove" title="Remove member" aria-label="Remove member">✕</button>';
+      if (m) {
+        row.querySelector('.mName').value = m.name;
+        row.querySelector('.mAge').value = m.age;
+        row.querySelector('.mSenior').checked = !!m.senior;
+        row.querySelector('.mInfant').checked = !!m.infant;
+        row.querySelector('.mPwd').checked = !!m.pwd;
+        row.querySelector('.mPregnant').checked = !!m.pregnant;
+        row.querySelector('.mHead').checked = !!m.head;
+      } else if (index === 0) {
+        row.querySelector('.mHead').checked = true;
+      }
+      row.querySelector('.remove').addEventListener('click', () => {
+        if (document.querySelectorAll('#members .line').length > 1) row.remove();
+      });
+      return row;
+    }
+
+    function openForm(h) {
+      editing = h;
+      document.getElementById('regForm').reset();
+      document.getElementById('regTitle').textContent = h ? 'Edit household · ' + h.id : 'Register household';
+      document.getElementById('regDisaster').textContent = 'For ' + current.name + ' (' + current.id + ')';
+      const box = document.getElementById('members');
+      box.innerHTML = '';
+      if (h) {
+        h.memberList.forEach((m, i) => box.appendChild(memberRow(i, m)));
+        const homeless = current.barangay && h.address === current.barangay;
+        document.getElementById('hHomeless').checked = homeless;
+        document.getElementById('hAddress').value = homeless ? '' : h.address;
+        document.getElementById('hFaced').value = h.facedNumber || '';
+        document.getElementById('hNeeds').value = h.needs || '';
+        document.getElementById('hDamage').value = h.damage || '';
+        document.getElementById('hEvac').value = h.evacuation || '';
+      } else {
+        box.appendChild(memberRow(0));
+      }
+      document.getElementById('hAddress').disabled = document.getElementById('hHomeless').checked;
+      document.getElementById('reasonWrap').style.display = h ? 'block' : 'none';
+      document.getElementById('regWarn').style.display = 'none';
+      document.getElementById('regSubmit').textContent = h ? 'Save changes' : 'Register household';
+      confirmDuplicate = false;
+      showError('regError', '');
+      openModal('regModal');
+    }
+    document.getElementById('addMember').addEventListener('click', () => {
+      const box = document.getElementById('members');
+      box.appendChild(memberRow(box.children.length));
+    });
+    document.getElementById('hHomeless').addEventListener('change', e => {
+      const address = document.getElementById('hAddress');
+      address.disabled = e.target.checked;
+      if (e.target.checked) address.value = '';
+    });
+
+    document.getElementById('regForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      showError('regError', '');
+      const rows = Array.from(document.querySelectorAll('#members .line'));
+      const headIndex = rows.findIndex(r => r.querySelector('.mHead').checked);
+      const names = rows.map(r => r.querySelector('.mName').value.trim());
+      const address = document.getElementById('hAddress').value.trim();
+      const faced = document.getElementById('hFaced').value.trim();
+
+      // When registering, warn once about a possible duplicate (same head, address or FACED number in this event).
+      if (!editing && !confirmDuplicate && headIndex >= 0) {
+        const head = names[headIndex].toLowerCase();
+        const similar = inEvent().filter(h => h.head.toLowerCase() === head ||
+          (address && h.address.toLowerCase() === address.toLowerCase()) || (faced && h.facedNumber === faced));
+        if (similar.length) {
+          const warn = document.getElementById('regWarn');
+          warn.innerHTML = '<div><div class="t">Possible duplicate</div><div class="d">Already registered: ' +
+            similar.map(h => esc(h.id + ' · ' + h.head + ' · ' + h.address + (h.facedNumber ? ' · FACED ' + h.facedNumber : ''))).join('; ') +
+            '. Check before continuing.</div></div>';
+          warn.style.display = 'flex';
+          document.getElementById('regSubmit').textContent = 'Register anyway';
+          confirmDuplicate = true;
+          return;
+        }
+      }
+      const values = {
+        disasterId: current.id,
+        homeless: document.getElementById('hHomeless').checked ? '1' : '0',
+        address: address,
+        facedNumber: faced,
+        needs: document.getElementById('hNeeds').value,
+        damage: document.getElementById('hDamage').value,
+        evacuation: document.getElementById('hEvac').value,
+        memberId: rows.map(r => r.dataset.id),
+        memberName: names,
+        memberAge: rows.map(r => r.querySelector('.mAge').value),
+        memberSenior: rows.map(r => r.querySelector('.mSenior').checked ? '1' : '0'),
+        memberInfant: rows.map(r => r.querySelector('.mInfant').checked ? '1' : '0'),
+        memberPwd: rows.map(r => r.querySelector('.mPwd').checked ? '1' : '0'),
+        memberPregnant: rows.map(r => r.querySelector('.mPregnant').checked ? '1' : '0'),
+        headIndex: headIndex
+      };
+      try {
+        if (editing) {
+          values.id = editing.id;
+          values.reason = document.getElementById('hReason').value;
+          await post('/api/households/update', values);
+          closeModal('regModal');
+          await load();
+          flash('<div class="t">' + esc(editing.id) + ' updated</div><div class="d">The change is recorded in the audit log.</div>');
+        } else {
+          const result = await post('/api/households', values);
+          closeModal('regModal');
+          await load();
+          flash('<div class="t">' + esc(result.id) + ' registered</div><div class="d">' + rows.length + ' member' + (rows.length === 1 ? '' : 's') + ' recorded for ' + esc(current.name) + '.</div>');
+        }
+      } catch (e) { showError('regError', e.message); }
+    });
+
+    load();
+  })();
+</script>
+</body>
+</html>

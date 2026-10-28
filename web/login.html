@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BarangayCare - Sign in</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="login">
+  <section class="login-left">
+    <div class="name">BarangayCare</div>
+    <div class="kicker">RELIEF GOODS MANAGEMENT SYSTEM</div>
+    <h1>Every resource accounted for. Every family in view.</h1>
+    <p class="lead">A shared workspace for Barangay officials to receive, track and release relief goods with confidence.</p>
+    <div class="features">
+      <b>Receive donations</b><span>Stock increases with a recorded receipt.</span>
+      <b>Understand household needs</b><span>Connect families to an active disaster.</span>
+      <b>Release with accountability</b><span>Verify assistance, deduct stock and retain proof.</span>
+    </div>
+    <div class="foot-note">Illustrative training environment &middot; Fictional records only</div>
+  </section>
+
+  <section class="login-right">
+    <span class="pill">Authorized barangay personnel</span>
+    <h2>Welcome back</h2>
+    <p class="lead2">Sign in with your assigned role to continue.</p>
+
+    <form id="loginForm" autocomplete="on">
+      <div class="box"><label for="workspace">Workspace</label><select id="workspace"></select></div>
+      <div class="box"><label for="role">Role</label>
+        <select id="role">
+          <option value="ADMIN">Admin</option>
+          <option value="BARANGAY_OFFICIAL" selected>Barangay Official</option>
+          <option value="ENCODER">Encoder</option>
+        </select>
+      </div>
+      <div class="box"><label for="email">Email address</label><input id="email" type="email" autocomplete="username" required></div>
+      <div class="box"><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required></div>
+      <div class="forgot"><button type="button" class="link" id="forgot">Forgot password?</button></div>
+      <button class="btn primary" type="submit" id="signIn">Sign in to workspace</button>
+    </form>
+
+    <div class="banner danger" id="loginError">
+      <div><div class="t">Role or password not recognized</div>
+      <div class="d">Check your credentials and assigned role. Contact your Admin if access is unavailable.</div></div>
+    </div>
+
+    <div class="access">Access by role</div>
+    <div class="access-table">
+      <div class="access-row head"><span>Role</span><span>Workspace access</span></div>
+      <div class="access-row"><span>Admin</span><span>All modules, accounts &amp; roles</span></div>
+      <div class="access-row"><span>Barangay Official</span><span>Manage records, confirm releases &amp; export reports</span></div>
+      <div class="access-row"><span>Encoder</span><span>Enter records and prepare drafts; no release or deletion</span></div>
+    </div>
+  </section>
+</div>
+
+<script src="app.js"></script>
+<script>
+  (async function () {
+    // Already signed in? Go straight to the dashboard.
+    try { const r = await fetch('/api/me'); if (r.ok) { window.location.href = 'dashboard.html'; return; } } catch (e) {}
+
+    const workspace = document.getElementById('workspace');
+    try {
+      const data = await fetch('/api/workspaces').then(r => r.json());
+      (data.workspaces || []).forEach(w => {
+        const option = document.createElement('option');
+        option.value = w.id;
+        option.textContent = w.name + ' \u00b7 ' + w.municipality;
+        workspace.appendChild(option);
+      });
+    } catch (e) { /* the list stays empty */ }
+
+    document.getElementById('forgot').addEventListener('click', () => {
+      alert('Please contact your Admin to reset your password.');
+    });
+
+    document.getElementById('loginForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const error = document.getElementById('loginError');
+      error.style.display = 'none';
+      const body = new URLSearchParams({
+        workspace: workspace.value,
+        role: document.getElementById('role').value,
+        email: document.getElementById('email').value,
+        password: document.getElementById('password').value
+      });
+      const response = await fetch('/api/login', { method: 'POST', body: body });
+      if (response.ok) {
+        window.location.href = 'dashboard.html';
+      } else {
+        error.style.display = 'flex';
+        document.getElementById('password').value = '';
+      }
+    });
+  })();
+</script>
+</body>
+</html>
