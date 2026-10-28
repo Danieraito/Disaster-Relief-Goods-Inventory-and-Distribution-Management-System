@@ -1,0 +1,17 @@
+GUI decisions
+- Barangay-specific workspaces; admins access all
+- All active roles can manage disasters in their workspace
+- Households require at least one confirmed member
+- Homeless household address uses barangay name
+- One household head represents the family for aid
+- Age and member categories entered separately
+- Each donation receipt creates a separate stock batch
+- Select a batch when multiple batches have stock
+- Approvals required before stock changes
+- Keep GUI as the View; backend logic stays in Models
+
+Phases
+- Phase 1 — Structure: Core classes and relationships done
+- Phase 2 — SQL: Not started
+- Phase 3 — GUI: Not started
+- Phase 4 — Final Testing and Debugging: Not started

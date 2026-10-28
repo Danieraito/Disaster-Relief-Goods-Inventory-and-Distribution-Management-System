@@ -9,7 +9,7 @@
     <version>1.0-SNAPSHOT</version>
 
     <properties>
-        <maven.compiler.release>17</maven.compiler.release>
+        <maven.compiler.release>25</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -23,6 +23,7 @@
 
     <build>
         <sourceDirectory>${project.basedir}</sourceDirectory>
+        <testSourceDirectory>${project.basedir}/tests</testSourceDirectory>
         <!-- the Inter font and schema.sql travel with the app, so it runs from any folder -->
         <resources>
             <resource>
@@ -38,12 +39,15 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.13.0</version>
+                <version>3.15.0</version>
                 <configuration>
                     <includes>
                         <include>LIB/**/*.java</include>
                         <include>GUI/**/*.java</include>
                     </includes>
+                    <testIncludes>
+                        <testInclude>**/*.java</testInclude>
+                    </testIncludes>
                 </configuration>
             </plugin>
             <plugin>

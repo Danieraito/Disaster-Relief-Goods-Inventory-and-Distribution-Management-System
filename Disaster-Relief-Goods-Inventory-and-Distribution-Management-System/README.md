@@ -191,7 +191,7 @@ Nothing else changed. Databases that already exist are untouched.
 
 ### Tested
 
-* Compiled with `--release 17`.
+* Compiled with `--release 25` and requires a Java 25 or newer runtime.
 * End to end on MariaDB 10.11 with MySQL-8-style strict SQL mode (`ONLY_FULL_GROUP_BY`, `STRICT_TRANS_TABLES`):
   fresh install, demo data, every report, and walkthroughs that type into the real screens (see `tests/`).
 * **Not** tested against Aiven / MySQL itself. Run `tests/FreshInstallTest` against a practice database first.

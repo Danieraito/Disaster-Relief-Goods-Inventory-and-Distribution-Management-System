@@ -1,0 +1,7 @@
+target/
+db.properties
+*.class
+.vscode/
+.idea/
+# chat exports can contain pasted credentials - never commit them
+chat.json
