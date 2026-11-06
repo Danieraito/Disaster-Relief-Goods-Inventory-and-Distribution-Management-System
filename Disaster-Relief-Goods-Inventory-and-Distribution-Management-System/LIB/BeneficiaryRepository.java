@@ -234,7 +234,6 @@ public class BeneficiaryRepository {
 
     /** Households of the same disaster with the same head name and/or address (for duplicate warnings). */
     public List<Row> findSimilar(String disasterId, String headName, String address) throws SQLException {
-        Filter none = new Filter();
         return Db.read(connection -> Db.list(connection, "SELECT household_id, household_name, address, purok "
                 + "FROM households WHERE disaster_id = ? AND (LOWER(household_name) = LOWER(?) "
                 + "OR LOWER(address) = LOWER(?))", row -> {

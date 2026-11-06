@@ -125,7 +125,7 @@ class AuditPage extends Page {
         });
         Dropdown<String> moduleBox = Dropdown.of(ALL_MODULES, AuditRepository.MODULE_INVENTORY, AuditRepository.MODULE_DISASTERS,
                 AuditRepository.MODULE_BENEFICIARIES, AuditRepository.MODULE_DONATIONS, AuditRepository.MODULE_DISTRIBUTION,
-                AuditRepository.MODULE_USERS);
+                AuditRepository.MODULE_USERS, AuditRepository.MODULE_AI);
         moduleBox.setSelected(module);
         moduleBox.onChange(() -> {
             module = moduleBox.getSelected();

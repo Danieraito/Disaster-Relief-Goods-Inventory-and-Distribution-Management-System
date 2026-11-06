@@ -148,7 +148,6 @@ public class ReportService {
         int assisted = 0;
         int people = 0;
         for (Disaster disaster : selected) {
-            final int[] counts = new int[2];
             List<String[]> rows = Db.read(connection -> Db.list(connection, "SELECT COALESCE(NULLIF(h.purok, ''), "
                     + "'Unassigned') AS area, COUNT(DISTINCT h.household_id) AS families, COUNT(m.member_id) AS people, "
                     + "SUM(CASE WHEN m.is_senior_citizen THEN 1 ELSE 0 END) AS seniors, "

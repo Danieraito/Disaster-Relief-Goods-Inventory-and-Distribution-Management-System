@@ -1,7 +1,6 @@
 package GUI;
 
 import GUI.Theme.Tone;
-import LIB.Donations;
 import LIB.DonationController;
 import LIB.DonationRepository;
 import LIB.Donor;

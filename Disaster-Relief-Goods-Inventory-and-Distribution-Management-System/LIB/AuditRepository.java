@@ -22,6 +22,7 @@ public class AuditRepository {
     public static final String MODULE_DONATIONS = "Donations";
     public static final String MODULE_DISTRIBUTION = "Distribution";
     public static final String MODULE_USERS = "Users";
+    public static final String MODULE_AI = "AI Agent";
 
     private static final Map<String, String> LABELS = new LinkedHashMap<>();
 
@@ -50,6 +51,11 @@ public class AuditRepository {
         LABELS.put("USER_REACTIVATED", "Account reactivated");
         LABELS.put("PASSWORD_RESET", "Password reset");
         LABELS.put("BARANGAY_CREATED", "Workspace created");
+        LABELS.put("AI_CHANGE_PROPOSED", "AI change proposed");
+        LABELS.put("AI_CHANGE_REVIEW_STARTED", "AI change review started");
+        LABELS.put("AI_CHANGE_APPLIED", "AI change applied");
+        LABELS.put("AI_CHANGE_REJECTED", "AI change rejected");
+        LABELS.put("AI_CHANGE_FAILED", "AI change failed");
     }
 
     public static String label(String action) {

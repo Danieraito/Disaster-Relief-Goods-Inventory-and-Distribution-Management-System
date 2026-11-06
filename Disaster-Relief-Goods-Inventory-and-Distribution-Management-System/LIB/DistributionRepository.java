@@ -343,7 +343,6 @@ public class DistributionRepository {
                 return problem;
             }
         }
-        boolean blocked = false;
         Problem stock = null;
         List<String[]> table = new ArrayList<>();
         for (Map.Entry<String, Integer> entry : requested.entrySet()) {
