@@ -21,6 +21,7 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
+import javax.swing.SwingUtilities;
 import javax.swing.WindowConstants;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
@@ -111,6 +112,7 @@ final class Shell extends JFrame {
     }
 
     private void changePassword() {
+        Input current = new Input("");
         javax.swing.JPasswordField old = password();
         javax.swing.JPasswordField fresh = password();
         javax.swing.JPasswordField again = password();
@@ -225,7 +227,7 @@ final class Shell extends JFrame {
 
         NavTabs() {
             for (String module : new String[] { "Dashboard", "Inventory", "Disasters", "Beneficiaries", "Donations",
-                "Distribution", "Reports", "AI Agent", "Audit Logs" }) {
+                "Distribution", "Reports", "Audit Logs" }) {
                 modules.add(module);
             }
             if (Session.isAdmin()) {
@@ -298,8 +300,6 @@ final class Navigation {
                 return new DistributionPage();
             case "Reports":
                 return new ReportsPage();
-            case "AI Agent":
-                return new AiCenterPage();
             case "Audit Logs":
                 return new AuditPage();
             case "User administration":

@@ -20,8 +20,7 @@ import java.util.Properties;
 /**
  * Opens JDBC connections. Settings come from the DB_URL / DB_USER / DB_PASSWORD environment
  * variables first, then from an optional db.properties file in the working folder
- * (non-secret keys: url and user). Passwords are environment-only or held in memory for the session.
- * Closed connections go back into a small pool so screens that run
+ * (keys: url, user, password). Closed connections go back into a small pool so screens that run
  * several queries do not pay the connection cost of a hosted database every time.
  */
 public final class DatabaseConnection {
@@ -31,9 +30,6 @@ public final class DatabaseConnection {
     private static final int MAX_IDLE = 4;
     private static final Deque<Connection> IDLE = new ArrayDeque<>();
     private static String poolKey = "";
-    private static String sessionUrl;
-    private static String sessionUser;
-    private static String sessionPassword;
 
     public static final class Settings {
         public final String url;
@@ -52,11 +48,11 @@ public final class DatabaseConnection {
 
     public static Settings settings() {
         Properties file = loadFile();
-        String url = firstText(System.getenv("DB_URL"), sessionUrl, file.getProperty("url"), DEFAULT_URL);
-        String user = firstText(System.getenv("DB_USER"), sessionUser, file.getProperty("user"), "");
+        String url = firstText(System.getenv("DB_URL"), file.getProperty("url"), DEFAULT_URL);
+        String user = firstText(System.getenv("DB_USER"), file.getProperty("user"), "");
         String password = System.getenv("DB_PASSWORD");
         if (password == null || password.isEmpty()) {
-            password = sessionPassword == null ? "" : sessionPassword;
+            password = file.getProperty("password", "");
         }
         return new Settings(url, user, password);
     }
@@ -66,32 +62,22 @@ public final class DatabaseConnection {
         return !settings.user.isEmpty() && !settings.password.isEmpty();
     }
 
-    /** Saves non-secret connection settings only. Passwords are never persisted by the application. */
+    /** Saves the connection settings to db.properties (kept out of git by .gitignore). */
     public static void saveSettings(String url, String user, String password) throws IOException {
         Properties properties = new Properties();
         properties.setProperty("url", url.trim());
         properties.setProperty("user", user.trim());
-        properties.remove("password");
+        properties.setProperty("password", password);
         try (OutputStream out = Files.newOutputStream(CONFIG_FILE)) {
-            properties.store(out, "BarangayCare database location; set DB_PASSWORD in the environment.");
+            properties.store(out, "BarangayCare database connection");
         }
-        setSessionSettings(url, user, password);
-    }
-
-    /** Keeps credentials in memory for the current process only. */
-    public static synchronized void setSessionSettings(String url, String user, String password) {
-        sessionUrl = firstText(url);
-        sessionUser = firstText(user);
-        sessionPassword = password == null ? "" : password;
         closeIdle();
     }
 
     /** Tries a one-off connection (not pooled); used by the connection settings dialog. */
     public static void test(String url, String user, String password) throws SQLException {
-        try (Connection connection = DriverManager.getConnection(url.trim(), user.trim(), password)) {
-            if (!connection.isValid(2)) {
-                throw new SQLException("The database connection could not be validated.");
-            }
+        try (Connection ignored = DriverManager.getConnection(url.trim(), user.trim(), password)) {
+            // opening the connection is the test
         }
     }
 
@@ -101,7 +87,7 @@ public final class DatabaseConnection {
             throw new SQLException("Database user is not set. Define DB_USER or save it in db.properties.");
         }
         if (settings.password.isEmpty()) {
-            throw new SQLException("Database password is not set. Define DB_PASSWORD or enter it for this session.");
+            throw new SQLException("Database password is not set. Define DB_PASSWORD or save it in db.properties.");
         }
         String key = settings.url + "|" + settings.user + "|" + settings.password.hashCode();
         Connection raw = null;
@@ -209,7 +195,6 @@ public final class DatabaseConnection {
                 // an unreadable file behaves like a missing one
             }
         }
-        properties.remove("password");
         return properties;
     }
 

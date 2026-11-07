@@ -1,6 +1,8 @@
 package GUI;
 
 import GUI.Theme.Tone;
+import LIB.BeneficiaryController;
+import LIB.BeneficiaryRepository;
 import LIB.Disaster;
 import LIB.DisasterController;
 import LIB.DisasterStats;
@@ -13,6 +15,7 @@ import LIB.InventoryController;
 import LIB.ReportService;
 import LIB.Time;
 import LIB.TransactionStatus;
+import LIB.Units;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;

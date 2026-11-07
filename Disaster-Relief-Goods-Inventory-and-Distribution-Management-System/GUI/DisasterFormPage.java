@@ -1,10 +1,12 @@
 package GUI;
 
 import GUI.Theme.Tone;
+import LIB.Disaster;
 import LIB.DisasterController;
 import LIB.Time;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import javax.swing.JComponent;

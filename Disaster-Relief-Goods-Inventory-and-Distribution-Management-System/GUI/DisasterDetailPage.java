@@ -250,6 +250,7 @@ class DisasterDetailPage extends Page {
         VBox form = new VBox(12);
         form.put(UI.para("Closing the event stops new household registrations and new releases for it. Existing records "
                 + "stay in reports."), new Field("Reason for closing *", reason));
+        String[] problem = new String[1];
         boolean ok = Dialogs.form(shell, "Close " + disaster.getName() + "?", null, form, "Close event", () -> {
             if (reason.getText().trim().isEmpty()) {
                 return "Enter a reason for closing the event.";

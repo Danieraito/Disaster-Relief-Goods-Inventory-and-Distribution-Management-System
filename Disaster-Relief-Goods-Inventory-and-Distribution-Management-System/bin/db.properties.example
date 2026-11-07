@@ -1,6 +1,10 @@
-# Optional non-secret connection settings. Do not put database passwords in this file.
-# Environment variables DB_URL, DB_USER and DB_PASSWORD take priority over these values.
-# If DB_PASSWORD is unset, BarangayCare asks for a password and holds it in memory only.
+# Copy this file to db.properties (it is ignored by git) and fill in your own values.
+# Environment variables DB_URL, DB_USER and DB_PASSWORD take priority over this file.
+# If neither is set, BarangayCare asks for these values on first start and saves them here.
 url=jdbc:mysql://localhost:3306/disaster_relief_inventory
 user=root
+<<<<<<< HEAD
 
+=======
+password=change-me
+>>>>>>> parent of 88336a8 (New Changes)

@@ -131,7 +131,7 @@ public final class App {
     }
 }
 
-/** Asks for database connection settings without persisting the password. */
+/** Asks for the database connection settings and saves them to db.properties. */
 final class ConnectionDialog {
     private ConnectionDialog() {
     }
@@ -141,17 +141,17 @@ final class ConnectionDialog {
         Input url = new Input(current.url);
         Input user = new Input(current.user);
         javax.swing.JPasswordField secret = Shell.password();
+        secret.setText(current.password);
         VBox form = new VBox(12);
         if (problem != null) {
             form.put(UI.alert(Tone.DANGER, "Could not connect", problem));
         }
         form.put(new Field("JDBC URL", url, "Example: jdbc:mysql://host:3306/disaster_relief_inventory?ssl-mode=REQUIRED"),
-                new Field("Database user", user),
-                new Field("Database password", secret, "Set DB_PASSWORD in the environment to avoid entering it each launch."));
+                new Field("Database user", user), new Field("Database password", secret));
         String[] failure = new String[1];
         boolean saved = Dialogs.form(null, "Database connection", "Enter the MySQL connection used by BarangayCare. "
-                + "The password is used only in memory for this session.", form,
-                "Test and use", () -> {
+                + "It is saved in db.properties next to the app (keep that file out of git).", form,
+                "Test and save", () -> {
                     try {
                         DatabaseConnection.test(url.getText(), user.getText(), new String(secret.getPassword()));
                         DatabaseConnection.saveSettings(url.getText(), user.getText(), new String(secret.getPassword()));

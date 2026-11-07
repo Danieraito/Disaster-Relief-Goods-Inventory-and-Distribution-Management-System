@@ -76,17 +76,6 @@ public final class SchemaUpdater {
         {"audit_logs", "actor_role", "VARCHAR(30) NULL"},
     };
 
-    private static final String[][] AI_COLUMNS = {
-        {"ai_feedback", "run_id", "VARCHAR(36) NULL"},
-        {"ai_runs", "status", "VARCHAR(20) NOT NULL DEFAULT 'SUCCEEDED'"},
-        {"ai_runs", "provider", "VARCHAR(40) NULL"},
-        {"ai_runs", "model", "VARCHAR(150) NULL"},
-        {"ai_runs", "elapsed_ms", "BIGINT NOT NULL DEFAULT 0"},
-        {"ai_runs", "provider_elapsed_ms", "BIGINT NOT NULL DEFAULT 0"},
-        {"ai_runs", "prompt_tokens", "BIGINT NOT NULL DEFAULT 0"},
-        {"ai_runs", "completion_tokens", "BIGINT NOT NULL DEFAULT 0"},
-    };
-
     private static final String[] TABLES = {
         "CREATE TABLE IF NOT EXISTS id_counters ("
             + "counter_key VARCHAR(60) NOT NULL PRIMARY KEY, "
@@ -98,41 +87,7 @@ public final class SchemaUpdater {
             + "PRIMARY KEY (household_id, category), "
             + "CONSTRAINT fk_need_household FOREIGN KEY (household_id) "
             + "REFERENCES households (household_id) ON DELETE RESTRICT)",
-        "CREATE TABLE IF NOT EXISTS ai_feedback ("
-            + "feedback_id VARCHAR(36) NOT NULL PRIMARY KEY, barangay_id VARCHAR(36) NOT NULL, "
-            + "account_id VARCHAR(36) NOT NULL, run_id VARCHAR(36) NULL, decision VARCHAR(30) NOT NULL, "
-            + "recommendation TEXT NOT NULL, "
-            + "comment TEXT NULL, created_at DATETIME(6) NOT NULL, "
-            + "CONSTRAINT fk_ai_feedback_barangay FOREIGN KEY (barangay_id) REFERENCES barangays (barangay_id) ON DELETE RESTRICT, "
-            + "CONSTRAINT fk_ai_feedback_account FOREIGN KEY (account_id) REFERENCES user_accounts (account_id) ON DELETE RESTRICT)",
-        "CREATE TABLE IF NOT EXISTS ai_runs ("
-            + "run_id VARCHAR(36) NOT NULL PRIMARY KEY, barangay_id VARCHAR(36) NOT NULL, "
-            + "account_id VARCHAR(36) NULL, mode VARCHAR(40) NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'SUCCEEDED', "
-            + "provider VARCHAR(40) NULL, model VARCHAR(150) NULL, elapsed_ms BIGINT NOT NULL DEFAULT 0, "
-            + "provider_elapsed_ms BIGINT NOT NULL DEFAULT 0, prompt_tokens BIGINT NOT NULL DEFAULT 0, "
-            + "completion_tokens BIGINT NOT NULL DEFAULT 0, question TEXT NULL, "
-            + "answer TEXT NOT NULL, tools_used TEXT NULL, created_at DATETIME(6) NOT NULL, "
-            + "CONSTRAINT fk_ai_runs_barangay FOREIGN KEY (barangay_id) REFERENCES barangays (barangay_id) ON DELETE RESTRICT)",
-        "CREATE TABLE IF NOT EXISTS ai_follow_ups ("
-            + "follow_up_id VARCHAR(36) NOT NULL PRIMARY KEY, barangay_id VARCHAR(36) NOT NULL, "
-            + "run_id VARCHAR(36) NULL, title VARCHAR(255) NOT NULL, detail TEXT NOT NULL, "
-            + "status VARCHAR(30) NOT NULL, last_assessed_at DATETIME(6) NULL, "
-            + "created_at DATETIME(6) NOT NULL, updated_at DATETIME(6) NOT NULL, "
-            + "CONSTRAINT fk_ai_follow_barangay FOREIGN KEY (barangay_id) REFERENCES barangays (barangay_id) ON DELETE RESTRICT)",
-        "CREATE TABLE IF NOT EXISTS ai_change_requests ("
-            + "proposal_id VARCHAR(36) NOT NULL PRIMARY KEY, run_id VARCHAR(36) NULL, barangay_id VARCHAR(36) NOT NULL, "
-            + "action VARCHAR(80) NOT NULL, summary VARCHAR(255) NOT NULL, original_request TEXT NOT NULL, "
-            + "proposal_json LONGTEXT NOT NULL, before_value LONGTEXT NOT NULL, after_value LONGTEXT NOT NULL, "
-            + "status VARCHAR(20) NOT NULL, proposed_by_account_id VARCHAR(36) NOT NULL, "
-            + "proposed_by_name VARCHAR(150) NOT NULL, proposed_by_role VARCHAR(30) NOT NULL, "
-            + "reviewed_by_account_id VARCHAR(36) NULL, reviewed_by_name VARCHAR(150) NULL, "
-            + "reviewed_by_role VARCHAR(30) NULL, created_at DATETIME(6) NOT NULL, reviewed_at DATETIME(6) NULL, "
-            + "applied_at DATETIME(6) NULL, outcome TEXT NULL, record_reference VARCHAR(100) NULL, "
-            + "CONSTRAINT fk_ai_change_barangay FOREIGN KEY (barangay_id) REFERENCES barangays (barangay_id) ON DELETE RESTRICT, "
-            + "CONSTRAINT fk_ai_change_run FOREIGN KEY (run_id) REFERENCES ai_runs (run_id) ON DELETE RESTRICT, "
-            + "CONSTRAINT fk_ai_change_proposer FOREIGN KEY (proposed_by_account_id) REFERENCES user_accounts (account_id) ON DELETE RESTRICT, "
-            + "CONSTRAINT fk_ai_change_reviewer FOREIGN KEY (reviewed_by_account_id) REFERENCES user_accounts (account_id) ON DELETE RESTRICT)",
-                "CREATE TABLE IF NOT EXISTS stock_adjustments ("
+        "CREATE TABLE IF NOT EXISTS stock_adjustments ("
             + "adjustment_id VARCHAR(36) NOT NULL PRIMARY KEY, "
             + "barangay_id VARCHAR(36) NOT NULL, "
             + "inventory_item_id VARCHAR(36) NOT NULL, "
@@ -224,14 +179,6 @@ public final class SchemaUpdater {
         }
         for (String table : TABLES) {
             execute(connection, table);
-        }
-        Set<String> aiColumns = new HashSet<>(Db.list(connection,
-                "SELECT CONCAT(table_name, '.', column_name) FROM information_schema.columns "
-                        + "WHERE table_schema = DATABASE()", row -> row.getString(1).toLowerCase()));
-        for (String[] column : AI_COLUMNS) {
-            if (!aiColumns.contains((column[0] + "." + column[1]).toLowerCase())) {
-                execute(connection, "ALTER TABLE " + column[0] + " ADD COLUMN " + column[1] + " " + column[2]);
-            }
         }
     }
 

@@ -76,9 +76,9 @@ public final class DemoData {
         int kitsOut = householdReleases + 6; // releases plus six damaged kits
 
         progress.accept("Adding relief items…");
-        inventory.addItem("Family food pack", "Food", 480 - 120 + foodOut, "pack", 100,
+        Inventory food = inventory.addItem("Family food pack", "Food", 480 - 120 + foodOut, "pack", 100,
                 "Hall · A-01", today.plusDays(27).toString(), "Opening count verified against the stock card.", barangay, ana);
-        inventory.addItem("Drinking water", "Water", 960 - 240 - 120 + waterOut, "liter", 200,
+        Inventory water = inventory.addItem("Drinking water", "Water", 960 - 240 - 120 + waterOut, "liter", 200,
                 "Hall · A-02", today.plusDays(200).toString(), "Opening count verified against the stock card.", barangay, ana);
         Inventory kit = inventory.addItem("Hygiene kit", "Hygiene kits", 84 + kitsOut, "kit", 80,
                 "Barangay hall · Shelf B-01", null, "Opening count verified against the stock card.", barangay, ana);
@@ -140,6 +140,7 @@ public final class DemoData {
         Disaster flood = disasters.addDisaster("Riverside flood", "Flood", today.minusDays(9), "Moderate", "Purok 4",
                 "Riverside, Purok 4", "Flash flooding along the riverbank.", "Ana Mendoza", school.getName(), barangay, maria);
 
+        Map<String, Integer> needs = new LinkedHashMap<>();
         int number = 0;
         progress.accept("Registering households and releasing goods…");
         List<Beneficiaries> fireHomes = register(households, fire, fireHouseholds, 5, random, leo, number += 100, "Purok 5");

@@ -26,6 +26,8 @@ class ItemFormPage extends Page {
     private LocalDate lastMovement;
     private boolean unitLocked;
     private String flash;
+    private String fatal;
+
     ItemFormPage() {
         this.itemId = null;
     }

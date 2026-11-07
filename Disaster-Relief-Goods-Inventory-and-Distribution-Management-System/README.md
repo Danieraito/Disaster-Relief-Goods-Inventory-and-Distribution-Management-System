@@ -103,8 +103,8 @@ navigation, cards and tables).
 1. Create an empty database, for example `disaster_relief_inventory` (character set `utf8mb4`).
 2. Tell the app how to connect. Any one of these works:
    * environment variables `DB_URL`, `DB_USER`, `DB_PASSWORD`
-   * a non-secret `db.properties` file next to `pom.xml` for `url` and `user`; never put passwords in it
-   * if `DB_PASSWORD` is unset, the app requests a password, tests it, and holds it in memory for that session
+   * a `db.properties` file next to `pom.xml` (copy `db.properties.example`; it is git-ignored)
+   * nothing: the app shows a "Database connection" window on first start, tests the connection and saves it
 3. Start it with `mvn compile exec:java` (or `run.bat` / `run.sh`). In VS Code you can also run `GUI.App`.
 4. On a database with no tables the app offers to create them from `database/schema.sql`, then a **first-run setup**
    asks for the barangay name and the first Admin account. Tick *"load illustrative training data"* only on a practice
@@ -114,13 +114,7 @@ navigation, cards and tables).
    `Maligaya#2026`. Deactivate them before real use.
 
 Existing databases are upgraded automatically at start-up: `LIB/SchemaUpdater` adds the extra columns and tables the
-new screens need, including AI run telemetry and feedback-to-run links. It only adds, never changes or deletes data,
-and is safe to run repeatedly.
-
-Database passwords are not stored by the application. If a password was previously included in `db.properties`,
-remove it and set `DB_PASSWORD` in the operating system environment. If a configuration file or ZIP containing a real
-database password has already been shared, rotate that database password; ignoring the file in Git does not remove it
-from an existing archive or history.
+new screens need. It only adds, never changes or deletes data, and is safe to run repeatedly.
 
 ### Roles
 
@@ -198,9 +192,6 @@ Nothing else changed. Databases that already exist are untouched.
 ### Tested
 
 * Compiled with `--release 25` and requires a Java 25 or newer runtime.
-* Run `mvn test` to compile the application and test sources. The main-based AI checks can be run from the project
-  folder with `java -cp "target/classes;target/test-classes" AiChangeProposalTest` and
-  `java -cp "target/classes;target/test-classes" AiSafetyAndForecastTest`.
 * End to end on MariaDB 10.11 with MySQL-8-style strict SQL mode (`ONLY_FULL_GROUP_BY`, `STRICT_TRANS_TABLES`):
   fresh install, demo data, every report, and walkthroughs that type into the real screens (see `tests/`).
 * **Not** tested against Aiven / MySQL itself. Run `tests/FreshInstallTest` against a practice database first.
@@ -215,25 +206,3 @@ Rotate the database password, delete the file and remove it from git history. `.
 
 The original README is kept in `docs/README-original.md`. `CHAT_CONTEXT_EXPORT.txt` and
 `pleasereadROIEMARbeforeproceeding.txt` are the original hand-off notes and describe the earlier project state.
-
-
-## AI Intelligence Center (optional)
-
-The AI Intelligence Center provides decision support and can stage bounded change proposals for review. It is scoped to the signed-in user's current barangay workspace.
-
-The page always shows system-calculated stock/disaster indicators. To generate an LLM response, open **AI Intelligence** in the main navigation and configure one of these providers from **Provider settings** (Admin):
-
-- **Ollama (local):** install and run Ollama, import or pull your local model, then use endpoint `http://localhost:11434/api/generate`. For this configured installation, the model name is `barangay-qwen`.
-- **Groq (cloud):** choose Groq, use model `openai/gpt-oss-120b` and endpoint `https://api.groq.com/openai/v1/chat/completions`, then set `GROQ_API_KEY` in the operating system environment before launching the app. Groq account access and rate limits apply. The application does not store API keys. On Windows PowerShell, run `setx GROQ_API_KEY "YOUR_GROQ_API_KEY"`, then close and reopen PowerShell (and restart your IDE if it was already open) before launching the application.
-
-Provider/model/endpoint preferences are saved in `~/.barangaycare-ai.properties`. Cloud-provider use is optional; review Groq's current privacy and data-retention terms before enabling it. A conservative guard blocks Groq requests when it detects household or contact details in user messages, tool arguments, or tool results; use Ollama for those requests. This heuristic is not a guarantee of detecting every personal detail, so do not rely on it as a substitute for privacy review. Local AI run/change history may contain the prompts and data needed to review authorized changes.
-
-To request an update, open the **Agent** tab, describe the requested change with exact values, then run the agent. The model may stage proposals for inventory create/edit/stock adjustment/archive/restore, disaster create/close, household registration/profile update, donation record/draft replacement/approval/rejection, or distribution record/approval/rejection. Approval and POST/release modes are available only when explicitly requested. The agent cannot run arbitrary SQL or apply a proposal directly.
-
-For best results, phrase change requests as a direct action (for example, “Add 10 hygiene kits” or “Update item 42's threshold to 20”) and include the required values. Read-only questions do not expose the change-proposal tool. If the agent cannot determine a required ID or value, it should ask rather than guess.
-
-Inventory change requests automatically include the live inventory and batch list so the agent can identify the intended item. It can stage new-item creation, item-detail edits, and documented stock adjustments; incoming goods for an existing item must be recorded through the donation workflow rather than as an unexplained stock correction. Every proposal shows before/after values and remains pending until a Barangay Official or Admin explicitly confirms it in **Changes**.
-
-Open the **Changes** tab to inspect the original request and before/after preview. A Barangay Official or Admin must confirm or reject each proposal; each review is checked against current data and routed through the existing permission checks, validation, and transaction/audit workflows. A change that is stale or invalid is not applied and is marked failed. Approved changes may still have real operational effects (including adding stock or releasing goods), so review the preview carefully. The AI change log records the request, proposal, status, reviewer, result, timestamp, and record reference; applied record operations also appear in the normal append-only **Audit Logs**. Existing databases receive the `ai_change_requests` table through the normal `SchemaUpdater` migration.
-
-The simulation no longer applies fixed severity multipliers. It reports completed historical events matching the selected hazard type and severity over the prior five years as a planning baseline, and it declines to produce a numeric baseline when none exist. Household-need quantities have no unit in the current data model, so the simulation does not compare them with inventory or claim a stock shortage. The agent appends its live data-source names and available record IDs to responses; its evidence-coverage label is not a calibrated probability. The Memory tab tracks run outcome, provider/model, elapsed time, token counts, and per-run human feedback. Dollar cost is not estimated because provider prices vary and are not reliably supplied by both providers.

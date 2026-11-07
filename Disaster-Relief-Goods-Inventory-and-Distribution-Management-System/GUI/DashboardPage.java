@@ -100,11 +100,9 @@ class DashboardPage extends Page {
             return UI.alert(Tone.TEAL, greeting + "Stock looks healthy.",
                     "Every item is above its threshold and nothing has expired.");
         }
-        Row actions = new Row(8);
-        actions.put(UI.secondary("Review alerts", () -> go(new InventoryPage(1))),
-                UI.secondary("Open AI Agent", () -> go(new AiCenterPage())));
         return UI.alert(Tone.WARN, greeting + attention.size() + (attention.size() == 1 ? " stock item needs"
-                : " stock items need") + " attention.", String.join(" ", lines), actions);
+                : " stock items need") + " attention.", String.join(" ", lines),
+                UI.secondary("Review alerts", () -> go(new InventoryPage(1))));
     }
 
     private String activeNames() {
