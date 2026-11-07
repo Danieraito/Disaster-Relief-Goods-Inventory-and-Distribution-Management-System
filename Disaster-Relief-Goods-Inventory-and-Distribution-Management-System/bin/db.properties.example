@@ -3,3 +3,4 @@
 # If DB_PASSWORD is unset, BarangayCare asks for a password and holds it in memory only.
 url=jdbc:mysql://localhost:3306/disaster_relief_inventory
 user=root
+
